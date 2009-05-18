@@ -54,13 +54,15 @@ static void rb_aio_signal_completion_handler( int signo, siginfo_t *info, void *
   ssize_t bytes_read;
   int ret;
 
-  if (signo == SIGIO) { 
+  if (signo == SIGUSR2) { 
     callback = (struct rb_aiocb *)(info->si_value.sival_ptr);
-    printf("aio_signal_completion_handler\n");
-    inspect_cb( callback, "aio_signal_completion_handler" );
-
+    printf("aio_signal_completion_handler %d %d %d %d %d %d %p %d %p\n", info->si_signo, info->si_errno, info->si_code, info->si_pid, info->si_uid, info->si_status, info->si_addr, info->si_value.sival_int, info->si_value.sival_ptr );
+    /*inspect_cb( &callback, "aio_signal_completion_handler" );*/
+	ret = aio_error( &callback->a );
+		printf("%d\n", ret);
+/*
     if ( ( ret = aio_error( &callback->a ) ) != EINPROGRESS )
-      rb_raise( eAio, "read failure" );
+      rb_raise( eAio, "read failure" );*/
   }
 
   return;
@@ -71,18 +73,18 @@ static void rb_aio_schedule_with_signal_callback( struct rb_aiocb * callback ){
   struct sigaction sig_act;
 
   sig_act.sa_sigaction = rb_aio_signal_completion_handler;
-  sig_act.sa_flags = SIGIO;
+  sig_act.sa_flags = SIGUSR2;
   sigemptyset( &sig_act.sa_mask );
-  sigaction( SIGIO, &sig_act, 0 );
+  sigaction( SIGUSR2, &sig_act, 0 );
 
   inspect_cb( callback, "before aio_schedule_with_signal_callback" );
 
   (*callback).a.aio_sigevent.sigev_notify = SIGEV_SIGNAL;
-  (*callback).a.aio_sigevent.sigev_signo = SIGIO;
+  (*callback).a.aio_sigevent.sigev_signo = SIGUSR2;
 
   (*callback).a.aio_sigevent.sigev_value.sival_ptr = callback;
   (*callback).a.aio_sigevent.sigev_notify_attributes = callback;
-  (*callback).a.aio_sigevent.sigev_value.sival_int = 23;
+  (*callback).a.aio_sigevent.sigev_value.sival_int = SIGUSR2;
 
   inspect_cb( callback, "after aio_schedule_with_signal_callback" );
 }
@@ -157,10 +159,10 @@ static void rb_aio_schedule_read_error(){
 static VALUE rb_aio_schedule_read( int argc, VALUE* argv, VALUE aio ){
   VALUE obj;
   int ret;
-  struct rb_aiocb *callback; 
+  struct rb_aiocb callback; 
   rb_aio_schedule( argc, argv, &callback );
   /*inspect_cb( &callback, "before aio_schedule_read" );*/
-  if ( ret = aio_read( &callback->a ) == -1 ){
+  if ( ret = aio_read( &callback.a ) == -1 ){
 	  /*inspect_cb( &callback, "after aio_schedule_read" ); */ 
 	rb_aio_schedule_read_error();
   }	

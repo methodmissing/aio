@@ -1,137 +1,283 @@
-// Aio_Platform_Test_C.cpp,v 1.1 1999/04/28 22:13:10 alex Exp
-// ============================================================================
-//
-// = FILENAME
-//    aio_platform_test_c.cpp
-//
-// =  DESCRITPTION
-//     Testing the platform for POSIX Asynchronous I/O. This is the C
-//     version of the  $ACE_ROOT/tests/Aio_Platform_Test.cpp. Useful
-//     to send bug reports.
-//
-// = AUTHOR
-//    Programming for the Real World. Bill O. GallMeister.
-//    Modified by Alexander Babu Arulanthu <alex@cs.wustl.edu>
-//
-// =====================================================================
+/*+++*******************************************************************
+ * AIO simple test program
+ ***********************************************************************/
 
-
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <signal.h>
-#include <string.h>
-#include <errno.h>
+#include <stdlib.h>
 #include <stdio.h>
-
+#include <string.h>
+#include <unistd.h>
 #include <limits.h>
-
+#include <time.h>
+#include <signal.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <aio.h>
 
-int do_sysconf (void);
-int have_asynchio (void);
+#define BLKSIZE 4096
 
-static int file_handle = -1;
-char mb1 [BUFSIZ + 1];
-char mb2 [BUFSIZ + 1];
-aiocb aiocb1, aiocb2;
-sigset_t completion_signal;
-
-// For testing the <aio> stuff.
-int test_aio_calls (void);
-int issue_aio_calls (void);
-int query_aio_completions (void);
-int setup_signal_delivery (void);
-int do_sysconf (void);
-int have_asynchio (void);
-  
-int
-do_sysconf (void)
-{
-  // Call sysconf to find out runtime values.
-  errno = 0;
-#if defined (_SC_LISTIO_AIO_MAX)
-  printf ("Runtime value of LISTIO_AIO_MAX is %d, errno = %d\n",
-          sysconf(_SC_LISTIO_AIO_MAX),
-          errno);
+#if __linux__
+#define AIO_SIGNAL  SIGUSR2
 #else
-  printf ("Runtime value of AIO_LISTIO_MAX is %d, errno = %d\n",
-          sysconf(_SC_AIO_LISTIO_MAX),
-          errno);
-#endif  
-  
-  errno = 0;
-  printf ("Runtime value of AIO_MAX is %d, errno = %d\n",
-          sysconf (_SC_AIO_MAX),
-          errno);
+// #define AIO_SIGNAL  SIGEMT
+#define AIO_SIGNAL  SIGUSR2
+#endif
 
-  errno = 0;
-  printf ("Runtime value of _POSIX_ASYNCHRONOUS_IO is %d, errno = %d\n",
-          sysconf (_SC_ASYNCHRONOUS_IO),
-          errno);
+typedef struct aiocb AIOCB;
 
-  errno = 0;
-  printf ("Runtime value of _POSIX_REALTIME_SIGNALS is %d, errno = %d\n",
-          sysconf (_SC_REALTIME_SIGNALS),
-          errno);
+long aio_max;
+long aio_listio_max;
 
-  errno = 0;
-  printf ("Runtime value of RTSIG_MAX %d, Errno = %d\n",
-          sysconf (_SC_RTSIG_MAX), 
-          errno);
-  
-  errno = 0;
-  printf ("Runtime value of SIGQUEUE_MAX %d, Errno = %d\n",
-          sysconf (_SC_SIGQUEUE_MAX),
-          errno); 
-  return 0;
+/*^L*/
+/*+
+**      NAME:
+**              handler_wait
+**
+**      SYNOPSIS:
+**
+**      DESCRIPTION:
+**
+**      RETURN VALUES:
+**
+**              PS_SUCCESS or error msg
+**
+**      FUNCTIONS USED:
+**
+**
+-*/
+int handler_wait() {
+    struct timeval tv;
+ 
+    fprintf(stdout,"Wait for signal handler (5 sec)\n");
+
+    /* Wait up to five seconds. */
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+
+    do {
+	errno = 0;
+	select(0, NULL, NULL, NULL, &tv);
+    } while(errno==EINTR);	    
 }
 
-int
-have_asynchio (void)
-{
-#if defined (_POSIX_ASYNCHRONOUS_IO)
-  // POSIX Asynch IO is present in this system.
-#if defined (_POSIX_ASYNC_IO)
-  // If this is defined and it is not -1, POSIX_ASYNCH is supported
-  // everywhere in the system.
-#if _POSIX_ASYNC_IO == -1
-  printf ("_POSIX_ASYNC_IO = -1.. ASYNCH IO NOT supported at all\n");
-  return -1;
-#else /* Not _POSIX_ASYNC_IO == -1 */
-  printf ("_POSIX_ASYNC_IO = %d\n ASYNCH IO is supported FULLY\n",
-          _POSIX_ASYNC_IO);
-#endif /* _POSIX_ASYNC_IO == -1 */
-  
-#else  /* Not defined  _POSIX_ASYNC_IO */
-  printf ("_POSIX_ASYNC_IO is not defined.\n");
-  printf ("AIO might *not* be supported on some paths\n");
-#endif /* _POSIX_ASYNC_IO */
-  
-  // System defined POSIX Values.
-  printf ("System claims to have  POSIX_ASYNCHRONOUS_IO\n");
+/*^L*/
+/*+
+**      NAME:
+**              gen_file
+**
+**      SYNOPSIS:
+**
+**      DESCRIPTION:
+**
+**      RETURN VALUES:
+**
+**              PS_SUCCESS or error msg
+**
+**      FUNCTIONS USED:
+**
+**
+-*/
+int gen_file(int async, int n_fd, int n_aio) {
+    int     nent;
+    int     retval,i;
+    int     filed;
+    char    filename[255];
+    int     fd[10];
+    AIOCB   *list[255];
+    AIOCB   *tmpaiocb;
+    struct sigevent list_sig;
 
-  printf ("_POSIX_AIO_LISTIO_MAX = %d\n", _POSIX_AIO_LISTIO_MAX);
-  printf ("_POSIX_AIO_MAX = %d\n", _POSIX_AIO_MAX);
+    list_sig.sigev_notify          = SIGEV_SIGNAL;
+    list_sig.sigev_signo           = AIO_SIGNAL;
+    list_sig.sigev_value.sival_ptr = (void *)1;
 
-  // Check and print the run time values.
-  do_sysconf ();
-  
-  return 0;
-  
-#else /* Not _POSIX_ASYNCHRONOUS_IO */
-  printf ("No support._POSIX_ASYNCHRONOUS_IO itself is not defined\n");
-  return -1;
-#endif /* _POSIX_ASYNCHRONOUS_IO */  
+    for(i=0;i<n_fd;i++) {
+	sprintf(filename,"AIO-FILE-%03i",i);
+	fd[i] = open( filename, O_CREAT|O_RDWR,0600);
+    }
+
+    /* Write AIO list */
+    fprintf(stdout,"Generate WRITE AIO list : \n");
+    for(i=0;i<n_aio;i++) {
+	tmpaiocb = (AIOCB *) malloc(sizeof(AIOCB));
+	memset( tmpaiocb, 0, sizeof (AIOCB));
+	tmpaiocb->aio_fildes     = fd[i%n_fd];
+
+	tmpaiocb->aio_offset     = i*BLKSIZE;
+	tmpaiocb->aio_reqprio    = 0;
+	tmpaiocb->aio_buf        = (void *) malloc(BLKSIZE);
+	tmpaiocb->aio_nbytes     = BLKSIZE;
+
+	memcpy((void *)tmpaiocb->aio_buf,&i,sizeof(int));
+
+	tmpaiocb->aio_lio_opcode = LIO_WRITE;
+	tmpaiocb->aio_sigevent.sigev_notify = SIGEV_NONE;
+
+	fprintf(stdout,"Got %p Slot %3i: fd=%i with offset=%4i size=%4i\n",
+		tmpaiocb, i, tmpaiocb->aio_fildes,tmpaiocb->aio_offset,tmpaiocb->aio_nbytes);
+	list[i]=tmpaiocb;
+    }
+
+    if (async) {
+	fprintf(stdout,"Start async. lio_listio\n");
+	retval      = lio_listio( LIO_NOWAIT, list, n_aio, &list_sig );
+    } else {
+	fprintf(stdout,"Start  sync. lio_listio\n");
+	retval      = lio_listio( LIO_WAIT,   list, n_aio, &list_sig );
+    }
+    if (retval) {
+	fprintf(stdout,"number=%i lio_listio ERROR (%i): %s\n", n_aio, errno, strerror(errno));
+    }
+
+    if (async) {
+	handler_wait();
+    }
+
+    for(i=0;i<n_aio;i++) {
+	if ((async) && ((retval=aio_suspend(list+i, 1, NULL))==-1)) {
+	    fprintf(stdout,"aio_suspend stated (%i) : %s\n",
+		    errno, strerror(errno));
+	}
+	tmpaiocb   = list[i];
+	if ((retval=aio_error(tmpaiocb))!=0) {
+	    if (retval == -1) {
+		fprintf(stdout,"%3i. (%p) ERROR AIO : %s\n",
+			i,tmpaiocb, strerror(errno));
+	    } else {
+		fprintf(stdout,"%3i.entry has errno (%i) : %s\n",
+			i, retval, strerror(retval));
+	    }
+	} else {
+	    fprintf(stdout,"%3i.entry o.k.\n",
+		    i);
+	}
+    }
+
+
 }
 
-int
-main (int, char *[])
-{
-  if (have_asynchio () == 0)
-    printf ("Test successful\n");
-  else
-    printf ("Test not successful\n");
-  return 0;
+/*^L*/
+/*+
+**      NAME:
+**              aio_signal_handler
+**
+**      SYNOPSIS:
+**
+**      DESCRIPTION:
+**
+**      RETURN VALUES:
+**
+**              PS_SUCCESS or error msg
+**
+**      FUNCTIONS USED:
+**
+**
+-*/
+void aio_signal_handler(int sig_nr, siginfo_t * si, void *   uc) {
+    long        index;
+    sigset_t   sset;
+
+    /* AIO handler for aio_??? and lio_listio */
+    index = (long) si->si_value.sival_ptr;
+    fprintf(stdout,"AIO signal handler for request %i started\n", index);
+
+}
+
+/*^L*/
+/*+
+**      NAME:
+**              init_signal
+**
+**      SYNOPSIS:
+**
+**      DESCRIPTION:
+**
+**      RETURN VALUES:
+**
+**              PS_SUCCESS or error msg
+**
+**      FUNCTIONS USED:
+**
+**
+-*/
+int init_signal() {
+    stack_t          ss;
+    struct sigaction new_act,old_act;
+
+    /* Init signal handler */
+    ss.ss_sp = malloc(SIGSTKSZ);
+    ss.ss_size = SIGSTKSZ;
+    ss.ss_flags = 0;
+
+    if (sigaltstack(&ss,NULL)==-1) {
+	fprintf(stderr,"Error generating signal stack\n");
+    }
+
+    if (sigaction(AIO_SIGNAL, NULL, &new_act)<0) {
+        fprintf(stderr,"ERROR setting signal handle\n");
+        exit(1);
+    }
+    new_act.sa_sigaction = aio_signal_handler;
+    sigemptyset(&new_act.sa_mask);
+    sigaddset(&new_act.sa_mask,AIO_SIGNAL);
+    new_act.sa_flags = SA_SIGINFO|SA_RESTART|SA_ONSTACK;
+    if (sigaction(AIO_SIGNAL, &new_act, &old_act)<0) {
+        fprintf(stderr,"ERROR setting signal handle\n");
+        exit(1);
+    }
+
+}
+
+/*^L*/
+/*+
+**      NAME:
+**              main
+**
+**      SYNOPSIS:
+**
+**      DESCRIPTION:
+**
+**      RETURN VALUES:
+**
+**              PS_SUCCESS or error msg
+**
+**      FUNCTIONS USED:
+**
+**
+-*/
+int main(int argc,char **argv) {
+    int              option;
+
+    /*
+     * Get kernel parameter (AIO maximal parameter)
+     */
+#if __linux__
+    aio_max        = sysconf(_POSIX_AIO_MAX);
+    aio_listio_max = sysconf(_POSIX_AIO_LISTIO_MAX); 
+#else
+    aio_max        = sysconf(_SC_AIO_MAX);
+    aio_listio_max = sysconf(_SC_AIO_LISTIO_MAX); 
+#endif
+
+    fprintf(stdout,"Limits are AIO_MAX=%i and AIO_LISTIO_MAX=%i\n",
+	    aio_max, aio_listio_max);
+
+    init_signal();
+
+#if 0
+    /* Generate AIO file */
+    if (gen_file(1,1,2)==1) {
+	exit(1);
+    }
+#endif
+
+    /* Generate AIO file */
+    if (gen_file(1,1,2)==1) {
+	exit(1);
+    }
+
+	if (gen_file(1,1,3)==1) {
+	exit(1);
+    }
+    return 0;
+
 }
