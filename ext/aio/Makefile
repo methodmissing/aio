@@ -4,81 +4,67 @@ SHELL = /bin/sh
 #### Start of system configuration section. ####
 
 srcdir = .
-topdir = /opt/local/ruby19/include/ruby-1.9.1
-hdrdir = /opt/local/ruby19/include/ruby-1.9.1
-arch_hdrdir = /opt/local/ruby19/include/ruby-1.9.1/$(arch)
-VPATH = $(srcdir):$(arch_hdrdir)/ruby:$(hdrdir)/ruby
-prefix = $(DESTDIR)/opt/local/ruby19
+topdir = /opt/local/lib/ruby/1.8/i686-darwin9.5.1
+hdrdir = $(topdir)
+VPATH = $(srcdir):$(topdir):$(hdrdir)
 exec_prefix = $(prefix)
-vendorhdrdir = $(rubyhdrdir)/vendor_ruby
-sitehdrdir = $(rubyhdrdir)/site_ruby
-rubyhdrdir = $(includedir)/$(RUBY_INSTALL_NAME)-$(ruby_version)
-vendordir = $(libdir)/$(RUBY_INSTALL_NAME)/vendor_ruby
-sitedir = $(libdir)/$(RUBY_INSTALL_NAME)/site_ruby
-mandir = $(datarootdir)/man
-localedir = $(datarootdir)/locale
-libdir = $(exec_prefix)/lib
-psdir = $(docdir)
-pdfdir = $(docdir)
-dvidir = $(docdir)
-htmldir = $(docdir)
-infodir = $(datarootdir)/info
-docdir = $(datarootdir)/doc/$(PACKAGE)
-oldincludedir = $(DESTDIR)/usr/include
-includedir = $(prefix)/include
-localstatedir = $(prefix)/var
+prefix = $(DESTDIR)/opt/local
 sharedstatedir = $(prefix)/com
-sysconfdir = $(prefix)/etc
-datadir = $(datarootdir)
-datarootdir = $(prefix)/share
-libexecdir = $(exec_prefix)/libexec
-sbindir = $(exec_prefix)/sbin
+mandir = $(datarootdir)/man
+psdir = $(docdir)
+oldincludedir = $(DESTDIR)/usr/include
+localedir = $(datarootdir)/locale
 bindir = $(exec_prefix)/bin
-rubylibdir = $(libdir)/$(ruby_install_name)/$(ruby_version)
-archdir = $(rubylibdir)/$(arch)
-sitelibdir = $(sitedir)/$(ruby_version)
-sitearchdir = $(sitelibdir)/$(sitearch)
-vendorlibdir = $(vendordir)/$(ruby_version)
+libexecdir = $(exec_prefix)/libexec
+sitedir = $(libdir)/ruby/site_ruby
+htmldir = $(docdir)
 vendorarchdir = $(vendorlibdir)/$(sitearch)
+includedir = $(prefix)/include
+infodir = $(datarootdir)/info
+vendorlibdir = $(vendordir)/$(ruby_version)
+sysconfdir = $(prefix)/etc
+libdir = $(exec_prefix)/lib
+sbindir = $(exec_prefix)/sbin
+rubylibdir = $(libdir)/ruby/$(ruby_version)
+docdir = $(datarootdir)/doc/$(PACKAGE)
+dvidir = $(docdir)
+vendordir = $(libdir)/ruby/vendor_ruby
+datarootdir = $(prefix)/share
+pdfdir = $(docdir)
+archdir = $(rubylibdir)/$(arch)
+sitearchdir = $(sitelibdir)/$(sitearch)
+datadir = $(datarootdir)
+localstatedir = $(prefix)/var
+sitelibdir = $(sitedir)/$(ruby_version)
 
 CC = gcc
-CXX = g++
 LIBRUBY = $(LIBRUBY_A)
 LIBRUBY_A = lib$(RUBY_SO_NAME)-static.a
-LIBRUBYARG_SHARED = -l$(RUBY_SO_NAME)
+LIBRUBYARG_SHARED = 
 LIBRUBYARG_STATIC = -l$(RUBY_SO_NAME)-static
-OUTFLAG = -o 
-COUTFLAG = -o 
 
 RUBY_EXTCONF_H = 
-cflags   = $(optflags) $(debugflags) $(warnflags)
-optflags = -O2
-debugflags = -g
-warnflags = -Wall -Wno-parentheses
-CFLAGS   =  -fno-common  $(cflags) -pipe -fno-common -lrt 
-INCFLAGS = -I. -I$(arch_hdrdir) -I$(hdrdir)/ruby/backward -I$(hdrdir) -I$(srcdir)
+CFLAGS   =  -fno-common -O2 -pipe -fno-common $(cflags) -lrt 
+INCFLAGS = -I. -I. -I/opt/local/lib/ruby/1.8/i686-darwin9.5.1 -I.
 DEFS     = 
-CPPFLAGS = -DHAVE_AIO_READ  -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE $(DEFS) $(cppflags)
-CXXFLAGS = $(CFLAGS)  $(cxxflags)
-ldflags  = -L. -L/usr/local/lib
+CPPFLAGS = -DHAVE_AIO_READ  -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE  
+CXXFLAGS = $(CFLAGS) 
+ldflags  = -L. 
 dldflags = 
 archflag = 
 DLDFLAGS = $(ldflags) $(dldflags) $(archflag)
 LDSHARED = cc -dynamic -bundle -undefined suppress -flat_namespace
-LDSHAREDXX = $(LDSHARED)
 AR = ar
 EXEEXT = 
 
 RUBY_INSTALL_NAME = ruby
 RUBY_SO_NAME = ruby
-arch = i386-darwin9.5.1
-sitearch = i386-darwin9.5.1
-ruby_version = 1.9.1
-ruby = /opt/local/ruby19/bin/ruby
+arch = i686-darwin9.5.1
+sitearch = i686-darwin9.5.1
+ruby_version = 1.8
+ruby = /opt/local/bin/ruby
 RUBY = $(ruby)
 RM = rm -f
-RM_RF = $(RUBY) -run -e rm -- -rf
-RMDIRS = $(RUBY) -run -e rmdir -- -p
 MAKEDIRS = mkdir -p
 INSTALL = /usr/bin/install -c
 INSTALL_PROG = $(INSTALL) -m 0755
@@ -95,13 +81,12 @@ DEFFILE =
 
 CLEANFILES = mkmf.log
 DISTCLEANFILES = 
-DISTCLEANDIRS = 
 
 extout = 
 extout_prefix = 
 target_prefix = 
 LOCAL_LIBS = 
-LIBS =   -lpthread -ldl -lobjc  
+LIBS =   -ldl -lobjc  
 SRCS = aio.c
 OBJS = aio.o
 TARGET = aio
@@ -113,31 +98,22 @@ BINDIR        = $(bindir)
 RUBYCOMMONDIR = $(sitedir)$(target_prefix)
 RUBYLIBDIR    = $(sitelibdir)$(target_prefix)
 RUBYARCHDIR   = $(sitearchdir)$(target_prefix)
-HDRDIR        = $(rubyhdrdir)/ruby$(target_prefix)
-ARCHHDRDIR    = $(rubyhdrdir)/$(arch)/ruby$(target_prefix)
 
 TARGET_SO     = $(DLLIB)
-CLEANLIBS     = $(TARGET).bundle 
-CLEANOBJS     = *.o  *.bak
+CLEANLIBS     = $(TARGET).bundle $(TARGET).il? $(TARGET).tds $(TARGET).map
+CLEANOBJS     = *.o *.a *.s[ol] *.pdb *.exp *.bak
 
-all:    $(DLLIB)
-static: $(STATIC_LIB)
+all:		$(DLLIB)
+static:		$(STATIC_LIB)
 
-clean-rb-default::
-clean-rb::
-clean-so::
-clean: clean-so clean-rb-default clean-rb
+clean:
 		@-$(RM) $(CLEANLIBS) $(CLEANOBJS) $(CLEANFILES)
 
-distclean-rb-default::
-distclean-rb::
-distclean-so::
-distclean: clean distclean-so distclean-rb-default distclean-rb
+distclean:	clean
 		@-$(RM) Makefile $(RUBY_EXTCONF_H) conftest.* mkmf.log
 		@-$(RM) core ruby$(EXEEXT) *~ $(DISTCLEANFILES)
-		@-$(RMDIRS) $(DISTCLEANDIRS)
 
-realclean: distclean
+realclean:	distclean
 install: install-so install-rb
 
 install-so: $(RUBYARCHDIR)
@@ -158,24 +134,24 @@ site-install-rb: install-rb
 .SUFFIXES: .c .m .cc .cxx .cpp .C .o
 
 .cc.o:
-	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(COUTFLAG)$@ -c $<
+	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) -c $<
 
 .cxx.o:
-	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(COUTFLAG)$@ -c $<
+	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) -c $<
 
 .cpp.o:
-	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(COUTFLAG)$@ -c $<
+	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) -c $<
 
 .C.o:
-	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(COUTFLAG)$@ -c $<
+	$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) -c $<
 
 .c.o:
-	$(CC) $(INCFLAGS) $(CPPFLAGS) $(CFLAGS) $(COUTFLAG)$@ -c $<
+	$(CC) $(INCFLAGS) $(CPPFLAGS) $(CFLAGS) -c $<
 
-$(DLLIB): $(OBJS) Makefile
-	@-$(RM) $(@)
+$(DLLIB): $(OBJS)
+	@-$(RM) $@
 	$(LDSHARED) -o $@ $(OBJS) $(LIBPATH) $(DLDFLAGS) $(LOCAL_LIBS) $(LIBS)
 
 
 
-$(OBJS): $(hdrdir)/ruby.h $(hdrdir)/ruby/defines.h $(arch_hdrdir)/ruby/config.h
+$(OBJS): ruby.h defines.h
