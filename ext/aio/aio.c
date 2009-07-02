@@ -7,135 +7,117 @@
 #include <signal.h>
 #include <fcntl.h>
 #ifdef _POSIX_ASYNCHRONOUS_IO
-#include    <aio.h>
-#else
-....
+#include <aio.h>
 #endif
+
+#ifndef RSTRING_PTR
+#define RSTRING_PTR(obj) RSTRING(obj)->ptr
+#endif
+ 
+#ifndef RSTRING_LEN
+#define RSTRING_LEN(obj) RSTRING(obj)->len
+#endif
+
+#ifndef RARRAY_PTR
+#define RARRAY_PTR(obj) RARRAY(obj)->ptr
+#endif
+ 
+#ifndef RARRAY_LEN
+#define RARRAY_LEN(obj) RARRAY(obj)->len
+#endif
+
+#ifdef HAVE_TBR
+  #include "ruby/io.h" 
+  #define TRAP_BEG
+  #define TRAP_END
+#else
+  #include "rubysig.h"
+  #include "rubyio.h"
+#endif
+
+#define AIO_MAX_LIST 16
 
 static VALUE mAio, eAio;
 
-struct rb_aiocb {
-    struct aiocb a;
-    off_t curr_offset;
-    int wait;
-    char *buffer;
+typedef struct aiocb aiocb_t;
+
+struct aio_read_multi_args {
+	aiocb_t **list;
+	int reads; 
 };
 
-#define BUFSIZE 4096
+static VALUE rb_aio_read( struct aio_read_multi_args *args ){
+	int op, ret;
+    VALUE results = rb_ary_new2( args->reads );
+	
+	TRAP_BEG;
+    ret = lio_listio( LIO_WAIT, (*args).list, args->reads, NULL );
+	TRAP_END;
+	if (ret != 0) rb_raise( rb_eIOError, "read multi schedule failure" );
 
-static void rb_aio_signal_completion_handler( int signo, siginfo_t *info, void *context )
-{
-    if (signo == SIGIO) { 
-      printf( "done\n" );
+    for (op=0; op < args->reads; op++) {
+		rb_ary_push( results, rb_tainted_str_new( (*args->list)[op].aio_buf, (*args->list)[op].aio_nbytes ) );
     }
-
-  return;
+	return results;
 }
 
-static int rb_aio_schedule( int argc, VALUE* argv, struct rb_aiocb * callback, int operation ) 
-{
-	VALUE fname, wait, offset, bytes;
+static void rb_io_closes( VALUE ios ){
+  int io;
+
+  for (io=0; io < RARRAY_LEN(ios); io++) {
+	 rb_io_close( RARRAY_PTR(ios)[io] );
+   } 
+}
+
+static VALUE rb_aio_s_read( VALUE aio, VALUE files ){
+#ifdef HAVE_TBR
+	rb_io_t *fptrs[AIO_MAX_LIST];
+#else	
+	OpenFile *fptrs[AIO_MAX_LIST];
+#endif
+    struct aio_read_multi_args args;
+	int fd, length, op;
     struct stat stats;
-    rb_scan_args(argc, argv, "04", &fname, &wait, &offset, &bytes);
-    Check_Type(fname, T_STRING);  
-    FILE * file = fopen( RSTRING_PTR(fname), "r+" );
+	aiocb_t cb[AIO_MAX_LIST];
+	aiocb_t *list[AIO_MAX_LIST]; 
+	
+	int reads = RARRAY_LEN(files);
+	VALUE ios = rb_ary_new2( reads );
+	VALUE io;    
 
-    if (offset == Qnil)
-      offset = 0;
-    if (bytes == Qnil)
-      fstat(fileno(file), &stats);
-      bytes = stats.st_size;
-    if (wait == Qnil)
-      wait = rb_const_get(mAio, rb_intern("WAIT") );
+    bzero( (char *)list, sizeof(list) );
+    for (op=0; op < reads; op++) {
+      Check_Type(RARRAY_PTR(files)[op], T_STRING);
+      io = rb_file_open(RSTRING_PTR(RARRAY_PTR(files)[op]), "r");
+	  rb_ary_push( ios, io );
+	  GetOpenFile(io, fptrs[op]);
+	  rb_io_check_readable(fptrs[op]); 	
 
-    char buffer[bytes];
+#ifdef HAVE_TBR
+  	  fd = fptrs[op]->fd;
+#else	
+  	  fd = fileno(fptrs[op]->f);
+#endif
+      fstat(fd, &stats);
+      length = stats.st_size;
 
-    memset( callback, 0, sizeof(struct rb_aiocb));
+      bzero(&cb[op], sizeof(aiocb_t));
 
-    (*callback).wait = NUM2INT(wait);
-    (*callback).a.aio_fildes = fileno(file);
-    (*callback).a.aio_buf = (*callback).buffer = buffer;
-    (*callback).a.aio_nbytes = FIX2INT(bytes);
-    (*callback).a.aio_offset = FIX2INT(offset);
-    (*callback).a.aio_reqprio = 0;
-    (*callback).a.aio_lio_opcode = operation;
-    (*callback).a.aio_sigevent.sigev_notify = SIGEV_NONE;
+	  cb[op].aio_buf = malloc(length + 1);
+ 	  if (!cb[op].aio_buf) rb_raise( rb_eIOError, "not able to allocate a read buffer" );
 
-  return fileno(file);
-}
-
-static void rb_aio_error( char * msg ){
-    rb_raise( eAio, msg );
-}
-
-static void rb_aio_schedule_read_error(){
-	switch(errno){
-	  case EOVERFLOW:
-	    rb_aio_error( "The file is a regular file, aiocbp->aio_nbytes is greater than 0 and the starting offset in aiocbp->aio_offset is before the end-of-file and is at or beyond the offset maximum in the open file descriptor associated with aiocbp->aio_fildes." );
-		break;
-	  case EAGAIN:
-	   	rb_aio_error( "At least one request could not be queued either because of a resource shortage or because the per-process or system-wide limit on asynchronous I/O operations or asynchronous threads would have been exceeded." );
-		break;
-	  case EINVAL:
-	    rb_aio_error( "The sigevent specified by sig is not valid." );
-		break;
-	  case EINTR:
-	    rb_aio_error( "The mode argument was LIO_WAIT and a signal was delivered while waiting for the requested operations to complete. This signal may result from completion of one or more of the requested operations and other requests may still be pending or completed." );
-	  case EBADF:
-	rb_aio_error( "The aiocbp->aio_fildes was not a valid file descriptor open for reading or writing as appropriate to the aio_lio_opcode." );	
-	  case EIO:
-	    rb_aio_error( "One or more of the enqueued operations did not complete successfully." );
-		break;
-	} 
-}
-
-static void rb_aio_install_signal_handler(){
-    stack_t          ss;
-    struct sigaction new_act,old_act;
-
-    /* Init signal handler */
-    ss.ss_sp = malloc(SIGSTKSZ);
-    ss.ss_size = SIGSTKSZ;
-    ss.ss_flags = 0;
-
-    if (sigaltstack(&ss,NULL)==-1) {
-	    rb_aio_error( "Error generating signal stack." );
+  	  cb[op].aio_fildes = fd;
+	  cb[op].aio_nbytes = length;
+	  cb[op].aio_offset = 0;
+	  cb[op].aio_sigevent.sigev_notify = SIGEV_NONE;
+	  cb[op].aio_sigevent.sigev_signo = 0;
+	  cb[op].aio_sigevent.sigev_value.sival_int = 0;
+	  cb[op].aio_lio_opcode = LIO_READ;
+      list[op] = &cb[op];
     }
-
-    if (sigaction( SIGIO, NULL, &new_act) < 0) {
-        rb_aio_error( "Not able to install the aio signal handler." );
-    }
-    new_act.sa_sigaction = rb_aio_signal_completion_handler;
-    sigemptyset( &new_act.sa_mask );
-    sigaddset( &new_act.sa_mask, SIGIO);
-    new_act.sa_flags = SA_SIGINFO | SA_RESTART | SA_ONSTACK;
-    if (sigaction( SIGIO, &new_act, &old_act ) < 0) {
-        rb_aio_error( "Not able to install the aio signal handler." );
-    }	
-}
-
-static VALUE rb_aio_schedule_read( int argc, VALUE* argv, VALUE aio ){
-    struct rb_aiocb callback; 
-    struct aiocb *list[1];
-    int fd = rb_aio_schedule( argc, argv, &callback, LIO_READ );
-    struct sigevent list_sig;  
-
-    rb_aio_install_signal_handler();
-
-    list[0] = &callback.a;
-
-    list_sig.sigev_notify = SIGEV_SIGNAL;
-    list_sig.sigev_signo = SIGIO;
-
-    if ( lio_listio( callback.wait, list, 1, &list_sig ) ) {  
-  	  rb_aio_schedule_read_error();
-    }	
-    close(fd);
-
-  return Qtrue;
-}
-
-static VALUE rb_aio_limits( int argc, VALUE* argv, VALUE aio ){
+	args.list = list;
+	args.reads = reads;
+    return rb_ensure( rb_aio_read, &args, rb_io_closes, ios );
 }
 
 void Init_aio()
@@ -147,6 +129,6 @@ void Init_aio()
 
     eAio = rb_define_class_under(mAio, "Error", rb_eStandardError);
 
-    rb_define_module_function( mAio, "read", rb_aio_schedule_read, -1 );
+    rb_define_module_function( mAio, "read", rb_aio_s_read, -2 );
 
 }
