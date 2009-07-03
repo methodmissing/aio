@@ -46,7 +46,7 @@ struct aio_read_multi_args {
 	int reads; 
 };
 
-static VALUE rb_aio_read( struct aio_read_multi_args *args ){
+static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 	int op, ret;
     VALUE results = rb_ary_new2( args->reads );
 	
@@ -68,7 +68,7 @@ static void rb_io_closes( VALUE ios ){
    } 
 }
 
-static VALUE rb_aio_s_read( VALUE aio, VALUE files ){
+static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 #ifdef HAVE_TBR
 	rb_io_t *fptrs[AIO_MAX_LIST];
 #else	
@@ -116,7 +116,7 @@ static VALUE rb_aio_s_read( VALUE aio, VALUE files ){
     }
 	args.list = list;
 	args.reads = reads;
-    return rb_ensure( rb_aio_read, &args, rb_io_closes, ios );
+    return rb_ensure( rb_aio_read_multi, &args, rb_io_closes, ios );
 }
 
 void Init_aio()
@@ -128,6 +128,6 @@ void Init_aio()
 
     eAio = rb_define_class_under(mAio, "Error", rb_eStandardError);
 
-    rb_define_module_function( mAio, "read", rb_aio_s_read, -2 );
+    rb_define_module_function( mAio, "read_multi", rb_aio_s_read_multi, -2 );
 
 }
