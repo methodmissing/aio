@@ -35,17 +35,22 @@
   #include "rubyio.h"
 #endif
 
+/* Max I/O operations across all supported platforms */
 #define AIO_MAX_LIST 16
 
 static VALUE mAio, eAio;
 
 typedef struct aiocb aiocb_t;
 
+/* Allows for passing n-1 arguments to the first rb_ensure function call */
 struct aio_read_multi_args {
 	aiocb_t **list;
 	int reads; 
 };
 
+/*
+ *  Initiates a *blocking* aio_read
+ */
 static VALUE rb_aio_read( aiocb_t *cb ){
 	int ret;
 	
@@ -61,6 +66,9 @@ static VALUE rb_aio_read( aiocb_t *cb ){
 	}	
 }
 
+/*
+ *  Initiates lio_listio
+ */
 static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 	int op, ret;
     VALUE results = rb_ary_new2( args->reads );
@@ -75,6 +83,9 @@ static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 	return results;
 }
 
+/*
+ *  Helper to ensure files opened via AIO.read_multi is closed.
+ */
 static void rb_io_closes( VALUE ios ){
     int io;
 
@@ -83,6 +94,11 @@ static void rb_io_closes( VALUE ios ){
     } 
 }
 
+/*
+ *  Setup a AIO control block for the given file descriptor and number of bytes to read.
+ *  Defaults to reading the entire file size into the buffer.Granular offsets would be 
+ *  supported in a future version.
+ */
 static void setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
     bzero(cb, sizeof(aiocb_t));
 
@@ -98,6 +114,13 @@ static void setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
 	(*cb).aio_lio_opcode = LIO_READ;
 }
 
+/*
+ *  call-seq:
+ *     AIO.read('file1') -> string
+ *  
+ *  Asynchronously reads a file.This is an initial *blocking* implementation until
+ *  cross platform notification is supported.
+ */
 static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
 #ifdef HAVE_TBR
 	rb_io_t *fptr;
@@ -128,6 +151,28 @@ static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
     return rb_ensure( rb_aio_read, &cb, rb_io_close, io );
 }
 
+/*
+ *  call-seq:
+ *     AIO.read_multi('file1','file2', ...) -> array
+ *  
+ *  Schedules a batch of read requests for execution by the kernel in order
+ *  to reduce system calls.Blocks until all the requests complete and returns
+ *  an array equal in length to the given files, with the read buffers as string
+ *  elements.The number of operations is currently limited to 16 due to cross 
+ *  platform limitations. 
+ *  
+ *  open_nocancel("first.txt\0", 0x0, 0x1B6)	 = 3 0
+ *  fstat(0x3, 0xBFFFEE04, 0x1B6)	 = 0 0
+ *  open_nocancel("second.txt\0", 0x0, 0x1B6)	 = 4 0
+ *  fstat(0x4, 0xBFFFEE04, 0x1B6)	 = 0 0
+ *  open_nocancel("third.txt\0", 0x0, 0x1B6)	 = 5 0
+ *  fstat(0x5, 0xBFFFEE04, 0x1B6)	 = 0 0
+ *  fstat64(0x1, 0xBFFFE234, 0x1B6)	 = 0 0
+ *  ioctl(0x1, 0x4004667A, 0xBFFFE29C)	 = 0 0
+ *  lio_listio(0x2, 0xBFFFEE64, 0x3)	 = 0 0
+ *  close_nocancel(0x4)	 = 0 0
+ *  close_nocancel(0x3)	 = 0 0
+ */
 static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 #ifdef HAVE_TBR
 	rb_io_t *fptrs[AIO_MAX_LIST];
@@ -141,6 +186,7 @@ static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 	aiocb_t *list[AIO_MAX_LIST]; 
 	
 	int reads = RARRAY_LEN(files);
+	if (reads > AIO_MAX_LIST) rb_raise( eAio, "maximum number of I/O calls exceeded!" );
 	VALUE ios = rb_ary_new2( reads );
 	VALUE io;    
 
