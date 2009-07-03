@@ -53,8 +53,7 @@ static VALUE rb_aio_read( struct aio_read_multi_args *args ){
 	TRAP_BEG;
     ret = lio_listio( LIO_WAIT, (*args).list, args->reads, NULL );
 	TRAP_END;
-	if (ret != 0) rb_raise( rb_eIOError, "read multi schedule failure" );
-
+	if (ret != 0) rb_raise( eAio, "read schedule failure" );
     for (op=0; op < args->reads; op++) {
 		rb_ary_push( results, rb_tainted_str_new( (*args->list)[op].aio_buf, (*args->list)[op].aio_nbytes ) );
     }
@@ -104,7 +103,7 @@ static VALUE rb_aio_s_read( VALUE aio, VALUE files ){
       bzero(&cb[op], sizeof(aiocb_t));
 
 	  cb[op].aio_buf = malloc(length + 1);
- 	  if (!cb[op].aio_buf) rb_raise( rb_eIOError, "not able to allocate a read buffer" );
+ 	  if (!cb[op].aio_buf) rb_raise( eAio, "not able to allocate a read buffer" );
 
   	  cb[op].aio_fildes = fd;
 	  cb[op].aio_nbytes = length;
