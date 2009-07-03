@@ -46,6 +46,21 @@ struct aio_read_multi_args {
 	int reads; 
 };
 
+static VALUE rb_aio_read( aiocb_t *cb ){
+	int ret;
+	
+	TRAP_BEG;
+    ret = aio_read( cb );
+	TRAP_END;
+	if (ret != 0) rb_raise( eAio, "read schedule failure" );
+	while ( aio_error( &cb ) == EINPROGRESS );
+	if ((ret = aio_return( cb )) > 0) {
+		return rb_tainted_str_new( (*cb).aio_buf, (*cb).aio_nbytes );
+	}else{
+		return INT2NUM(errno);
+	}	
+}
+
 static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 	int op, ret;
     VALUE results = rb_ary_new2( args->reads );
@@ -66,6 +81,48 @@ static void rb_io_closes( VALUE ios ){
   for (io=0; io < RARRAY_LEN(ios); io++) {
 	 rb_io_close( RARRAY_PTR(ios)[io] );
    } 
+}
+
+static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
+#ifdef HAVE_TBR
+	rb_io_t *fptr;
+#else	
+	OpenFile *fptr;
+#endif
+	int fd, length;
+    VALUE io;
+
+    struct stat stats;
+	aiocb_t cb;
+   
+    Check_Type(file, T_STRING);	
+	
+    io = rb_file_open(RSTRING_PTR(file), "r");
+    GetOpenFile(io, fptr);
+    rb_io_check_readable(fptr); 	
+
+#ifdef HAVE_TBR
+  	  fd = fptr->fd;
+#else	
+  	  fd = fileno(fptr->f);
+#endif
+      fstat(fd, &stats);
+      length = stats.st_size;
+
+      bzero(&cb, sizeof(aiocb_t));
+
+	  cb.aio_buf = malloc(length + 1);
+ 	  if (!cb.aio_buf) rb_raise( eAio, "not able to allocate a read buffer" );
+
+  	  cb.aio_fildes = fd;
+	  cb.aio_nbytes = length;
+	  cb.aio_offset = 0;
+	  cb.aio_sigevent.sigev_notify = SIGEV_NONE;
+	  cb.aio_sigevent.sigev_signo = 0;
+	  cb.aio_sigevent.sigev_value.sival_int = 0;
+	  cb.aio_lio_opcode = LIO_READ;
+
+    return rb_ensure( rb_aio_read, &cb, rb_io_close, io );
 }
 
 static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
@@ -129,5 +186,6 @@ void Init_aio()
     eAio = rb_define_class_under(mAio, "Error", rb_eStandardError);
 
     rb_define_module_function( mAio, "read_multi", rb_aio_s_read_multi, -2 );
+    rb_define_module_function( mAio, "read", rb_aio_s_read, 1 );
 
 }
