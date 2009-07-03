@@ -76,11 +76,26 @@ static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 }
 
 static void rb_io_closes( VALUE ios ){
-  int io;
+    int io;
 
-  for (io=0; io < RARRAY_LEN(ios); io++) {
-	 rb_io_close( RARRAY_PTR(ios)[io] );
-   } 
+    for (io=0; io < RARRAY_LEN(ios); io++) {
+  	  rb_io_close( RARRAY_PTR(ios)[io] );
+    } 
+}
+
+static void setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
+    bzero(cb, sizeof(aiocb_t));
+
+	(*cb).aio_buf = malloc(*length + 1);
+	if (!(*cb).aio_buf) rb_raise( eAio, "not able to allocate a read buffer" );
+
+	(*cb).aio_fildes = *fd;
+	(*cb).aio_nbytes = *length;
+	(*cb).aio_offset = 0;
+	(*cb).aio_sigevent.sigev_notify = SIGEV_NONE;
+	(*cb).aio_sigevent.sigev_signo = 0;
+	(*cb).aio_sigevent.sigev_value.sival_int = 0;
+	(*cb).aio_lio_opcode = LIO_READ;
 }
 
 static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
@@ -108,19 +123,7 @@ static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
 #endif
       fstat(fd, &stats);
       length = stats.st_size;
-
-      bzero(&cb, sizeof(aiocb_t));
-
-	  cb.aio_buf = malloc(length + 1);
- 	  if (!cb.aio_buf) rb_raise( eAio, "not able to allocate a read buffer" );
-
-  	  cb.aio_fildes = fd;
-	  cb.aio_nbytes = length;
-	  cb.aio_offset = 0;
-	  cb.aio_sigevent.sigev_notify = SIGEV_NONE;
-	  cb.aio_sigevent.sigev_signo = 0;
-	  cb.aio_sigevent.sigev_value.sival_int = 0;
-	  cb.aio_lio_opcode = LIO_READ;
+	  setup_aio_cb( &cb, &fd, &length );
 
     return rb_ensure( rb_aio_read, &cb, rb_io_close, io );
 }
@@ -156,19 +159,7 @@ static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 #endif
       fstat(fd, &stats);
       length = stats.st_size;
-
-      bzero(&cb[op], sizeof(aiocb_t));
-
-	  cb[op].aio_buf = malloc(length + 1);
- 	  if (!cb[op].aio_buf) rb_raise( eAio, "not able to allocate a read buffer" );
-
-  	  cb[op].aio_fildes = fd;
-	  cb[op].aio_nbytes = length;
-	  cb[op].aio_offset = 0;
-	  cb[op].aio_sigevent.sigev_notify = SIGEV_NONE;
-	  cb[op].aio_sigevent.sigev_signo = 0;
-	  cb[op].aio_sigevent.sigev_value.sival_int = 0;
-	  cb[op].aio_lio_opcode = LIO_READ;
+      setup_aio_cb( &cb[op], &fd, &length );
       list[op] = &cb[op];
     }
 	args.list = list;
