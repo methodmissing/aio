@@ -79,9 +79,9 @@ static VALUE rb_aio_read( aiocb_t *cb ){
     ret = aio_read( cb );
 	TRAP_END;
 	if (ret != 0) rb_aio_read_error();
-	while ( aio_error( &cb ) == EINPROGRESS );
+	while ( aio_error( cb ) == EINPROGRESS );
 	if ((ret = aio_return( cb )) > 0) {
-		return rb_tainted_str_new( (*cb).aio_buf, (*cb).aio_nbytes );
+		return rb_tainted_str_new( (char *)cb->aio_buf, cb->aio_nbytes );
 	}else{
 		return INT2NUM(errno);
 	}	
@@ -112,11 +112,11 @@ static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
     VALUE results = rb_ary_new2( args->reads );
 	
 	TRAP_BEG;
-    ret = lio_listio( LIO_WAIT, (*args).list, args->reads, NULL );
+    ret = lio_listio( LIO_WAIT, args->list, args->reads, NULL );
 	TRAP_END;
 	if (ret != 0) rb_aio_read_multi_error();
     for (op=0; op < args->reads; op++) {
-		rb_ary_push( results, rb_tainted_str_new( (*args->list)[op].aio_buf, (*args->list)[op].aio_nbytes ) );
+		rb_ary_push( results, rb_tainted_str_new( (char *)(*args->list)[op].aio_buf, (*args->list)[op].aio_nbytes ) );
     }
 	return results;
 }
@@ -124,7 +124,7 @@ static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 /*
  *  Helper to ensure files opened via AIO.read_multi is closed.
  */
-static void rb_io_closes( VALUE ios ){
+static VALUE rb_io_closes( VALUE ios ){
     int io;
 
     for (io=0; io < RARRAY_LEN(ios); io++) {
@@ -140,16 +140,16 @@ static void rb_io_closes( VALUE ios ){
 static void rb_setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
     bzero(cb, sizeof(aiocb_t));
 
-	(*cb).aio_buf = malloc(*length + 1);
-	if (!(*cb).aio_buf) rb_aio_error( "not able to allocate a read buffer" );
+	cb->aio_buf = malloc(*length + 1);
+	if (!cb->aio_buf) rb_aio_error( "not able to allocate a read buffer" );
 
-	(*cb).aio_fildes = *fd;
-	(*cb).aio_nbytes = *length;
-	(*cb).aio_offset = 0;
-	(*cb).aio_sigevent.sigev_notify = SIGEV_NONE;
-	(*cb).aio_sigevent.sigev_signo = 0;
-	(*cb).aio_sigevent.sigev_value.sival_int = 0;
-	(*cb).aio_lio_opcode = LIO_READ;
+	cb->aio_fildes = *fd;
+	cb->aio_nbytes = *length;
+	cb->aio_offset = 0;
+	cb->aio_sigevent.sigev_notify = SIGEV_NONE;
+	cb->aio_sigevent.sigev_signo = 0;
+	cb->aio_sigevent.sigev_value.sival_int = 0;
+	cb->aio_lio_opcode = LIO_READ;
 }
 
 /*
@@ -196,7 +196,7 @@ static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
 	VALUE io = rb_aio_open_file( &file, &fd, &length );
 	rb_setup_aio_cb( &cb, &fd, &length );
 
-    return rb_ensure( rb_aio_read, &cb, rb_io_close, io );
+    return rb_ensure( rb_aio_read, (VALUE)&cb, rb_io_close, io );
 }
 
 /*
@@ -242,7 +242,7 @@ static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 
 	args.list = list;
 	args.reads = reads;
-    return rb_ensure( rb_aio_read_multi, &args, rb_io_closes, ios );
+    return rb_ensure( rb_aio_read_multi, (VALUE)&args, rb_io_closes, ios );
 }
 
 void Init_aio()
