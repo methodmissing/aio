@@ -137,7 +137,7 @@ static void rb_io_closes( VALUE ios ){
  *  Defaults to reading the entire file size into the buffer.Granular offsets would be 
  *  supported in a future version.
  */
-static void setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
+static void rb_setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
     bzero(cb, sizeof(aiocb_t));
 
 	(*cb).aio_buf = malloc(*length + 1);
@@ -153,6 +153,36 @@ static void setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
 }
 
 /*
+ *  Open file for reading and infer file descriptor and the size to read. 
+ */
+static VALUE rb_aio_open_file( VALUE *file, int *fd, int *length ){ 
+#ifdef HAVE_TBR
+	rb_io_t *fptr;
+#else	
+	OpenFile *fptr;
+#endif
+    VALUE io;
+
+    struct stat stats;
+	aiocb_t cb;
+   
+    Check_Type(*file, T_STRING);	
+
+    io = rb_file_open(RSTRING_PTR(*file), "r");
+    GetOpenFile(io, fptr);
+    rb_io_check_readable(fptr); 	
+
+#ifdef HAVE_TBR
+    *fd = fptr->fd;
+#else	
+    *fd = fileno(fptr->f);
+#endif
+    fstat(*fd, &stats);
+    *length = stats.st_size;
+	return io;
+}
+
+/*
  *  call-seq:
  *     AIO.read('file1') -> string
  *  
@@ -160,31 +190,11 @@ static void setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
  *  cross platform notification is supported.
  */
 static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
-#ifdef HAVE_TBR
-	rb_io_t *fptr;
-#else	
-	OpenFile *fptr;
-#endif
-	int fd, length;
-    VALUE io;
-
-    struct stat stats;
-	aiocb_t cb;
-   
-    Check_Type(file, T_STRING);	
-	
-    io = rb_file_open(RSTRING_PTR(file), "r");
-    GetOpenFile(io, fptr);
-    rb_io_check_readable(fptr); 	
-
-#ifdef HAVE_TBR
-  	  fd = fptr->fd;
-#else	
-  	  fd = fileno(fptr->f);
-#endif
-      fstat(fd, &stats);
-      length = stats.st_size;
-	  setup_aio_cb( &cb, &fd, &length );
+    int fd, length; 
+    aiocb_t cb;
+	 
+	VALUE io = rb_aio_open_file( &file, &fd, &length );
+	rb_setup_aio_cb( &cb, &fd, &length );
 
     return rb_ensure( rb_aio_read, &cb, rb_io_close, io );
 }
@@ -212,40 +222,24 @@ static VALUE rb_aio_s_read( VALUE aio, VALUE file ){
  *  close_nocancel(0x3)	 = 0 0
  */
 static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
-#ifdef HAVE_TBR
-	rb_io_t *fptrs[AIO_MAX_LIST];
-#else	
-	OpenFile *fptrs[AIO_MAX_LIST];
-#endif
+    int op, fd, length; 
     struct aio_read_multi_args args;
-	int fd, length, op;
-    struct stat stats;
 	aiocb_t cb[AIO_MAX_LIST];
 	aiocb_t *list[AIO_MAX_LIST]; 
-	
+
 	int reads = RARRAY_LEN(files);
 	if (reads > AIO_MAX_LIST) rb_aio_error( "maximum number of I/O calls exceeded!" );
 	VALUE ios = rb_ary_new2( reads );
-	VALUE io;    
 
     bzero( (char *)list, sizeof(list) );
     for (op=0; op < reads; op++) {
-      Check_Type(RARRAY_PTR(files)[op], T_STRING);
-      io = rb_file_open(RSTRING_PTR(RARRAY_PTR(files)[op]), "r");
-	  rb_ary_push( ios, io );
-	  GetOpenFile(io, fptrs[op]);
-	  rb_io_check_readable(fptrs[op]); 	
 
-#ifdef HAVE_TBR
-  	  fd = fptrs[op]->fd;
-#else	
-  	  fd = fileno(fptrs[op]->f);
-#endif
-      fstat(fd, &stats);
-      length = stats.st_size;
-      setup_aio_cb( &cb[op], &fd, &length );
-      list[op] = &cb[op];
+	  rb_ary_push( ios, rb_aio_open_file( &RARRAY_PTR(files)[op], &fd, &length ) );
+
+      rb_setup_aio_cb( &cb[op], &fd, &length );
+      list[op] = &cb[op];       
     }
+
 	args.list = list;
 	args.reads = reads;
     return rb_ensure( rb_aio_read_multi, &args, rb_io_closes, ios );
