@@ -48,6 +48,27 @@ struct aio_read_multi_args {
 	int reads; 
 };
 
+static void rb_aio_error( char * msg ){
+    rb_raise( eAio, msg );
+}
+
+/*
+ *  Error handling for aio_read
+ */
+static void rb_aio_read_error(){
+    switch(errno){
+       case EAGAIN: 
+	        rb_aio_error( "The request cannot be queued due to exceeding resource (queue) limitations." );
+		  break;
+       case EBADF: 
+	        rb_aio_error( "File descriptor is not valid for reading." );
+			break;
+       case EINVAL: 
+            rb_aio_error( "Read offset is invalid" );
+			break;
+	}
+}
+
 /*
  *  Initiates a *blocking* aio_read
  */
@@ -57,13 +78,30 @@ static VALUE rb_aio_read( aiocb_t *cb ){
 	TRAP_BEG;
     ret = aio_read( cb );
 	TRAP_END;
-	if (ret != 0) rb_raise( eAio, "read schedule failure" );
+	if (ret != 0) rb_aio_read_error();
 	while ( aio_error( &cb ) == EINPROGRESS );
 	if ((ret = aio_return( cb )) > 0) {
 		return rb_tainted_str_new( (*cb).aio_buf, (*cb).aio_nbytes );
 	}else{
 		return INT2NUM(errno);
 	}	
+}
+
+/*
+ *  Error handling for lio_listio
+ */
+static void rb_aio_read_multi_error(){
+    switch(errno){
+       case EAGAIN: 
+	        rb_aio_error( "Resources necessary to queue all the requests are not available at the moment." );
+		  break;
+       case EIO: 
+	        rb_aio_error( "One or more requests failed" );
+			break;
+       case EINVAL: 
+            rb_aio_error( "Maximum number of allowed simultaneous requests exceeded." );
+			break;
+	}
 }
 
 /*
@@ -76,7 +114,7 @@ static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 	TRAP_BEG;
     ret = lio_listio( LIO_WAIT, (*args).list, args->reads, NULL );
 	TRAP_END;
-	if (ret != 0) rb_raise( eAio, "read schedule failure" );
+	if (ret != 0) rb_aio_read_multi_error();
     for (op=0; op < args->reads; op++) {
 		rb_ary_push( results, rb_tainted_str_new( (*args->list)[op].aio_buf, (*args->list)[op].aio_nbytes ) );
     }
@@ -103,7 +141,7 @@ static void setup_aio_cb( aiocb_t *cb, int *fd, int *length ){
     bzero(cb, sizeof(aiocb_t));
 
 	(*cb).aio_buf = malloc(*length + 1);
-	if (!(*cb).aio_buf) rb_raise( eAio, "not able to allocate a read buffer" );
+	if (!(*cb).aio_buf) rb_aio_error( "not able to allocate a read buffer" );
 
 	(*cb).aio_fildes = *fd;
 	(*cb).aio_nbytes = *length;
@@ -186,7 +224,7 @@ static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 	aiocb_t *list[AIO_MAX_LIST]; 
 	
 	int reads = RARRAY_LEN(files);
-	if (reads > AIO_MAX_LIST) rb_raise( eAio, "maximum number of I/O calls exceeded!" );
+	if (reads > AIO_MAX_LIST) rb_aio_error( "maximum number of I/O calls exceeded!" );
 	VALUE ios = rb_ary_new2( reads );
 	VALUE io;    
 
@@ -214,7 +252,7 @@ static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 }
 
 void Init_aio()
-{
+{	
     mAio = rb_define_module("AIO");
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
