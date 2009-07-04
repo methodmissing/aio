@@ -15,6 +15,6 @@ end
 
 add_define 'RUBY18' if have_var('rb_trap_immediate', ['ruby.h', 'rubysig.h'])
 
-$CFLAGS << ' -lrt'
+$CFLAGS << ' -lrt -laio'
 
 create_makefile('aio')
