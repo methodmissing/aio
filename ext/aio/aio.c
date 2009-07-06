@@ -36,7 +36,11 @@
 #endif
 
 /* Max I/O operations across all supported platforms */
-#define AIO_MAX_LIST 16
+#ifdef AIO_LISTIO_MAX
+  #define AIO_MAX_LIST AIO_LISTIO_MAX
+#else
+  #define AIO_MAX_LIST 16
+#endif
 
 static VALUE mAio, eAio;
 
