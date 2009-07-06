@@ -6,15 +6,8 @@ end
 
 dir_config('aio')
 
-have_func('aio_read', 'aio.h')
-
-if have_func('rb_thread_blocking_region') and have_macro('RUBY_UBF_IO', 'ruby.h')
-  $CFLAGS += " -DHAVE_TBR "
-  $CPPFLAGS << " -DHAVE_TBR "
-end
-
+raise 'cannot find AIO' unless have_library('rt', 'aio_read', 'aio.h')
+add_define 'HAVE_TBR' if have_func('rb_thread_blocking_region') and have_macro('RUBY_UBF_IO', 'ruby.h')
 add_define 'RUBY18' if have_var('rb_trap_immediate', ['ruby.h', 'rubysig.h'])
-
-$CFLAGS << ' -lrt -laio'
 
 create_makefile('aio')
