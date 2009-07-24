@@ -44,6 +44,8 @@
 
 static VALUE mAio, eAio;
 
+VALUE rb_cControlBlock;
+
 typedef struct aiocb aiocb_t;
 
 /* Allows for passing n-1 arguments to the first rb_ensure function call */
@@ -54,6 +56,25 @@ struct aio_read_multi_args {
 
 static void rb_aio_error( char * msg ){
     rb_raise( eAio, msg );
+}
+
+static void mark_control_block(aiocb_t* cb)
+{
+}
+
+static void free_control_block(aiocb_t* cb)
+{
+    xfree(cb);
+}
+
+static VALUE control_block_alloc _((VALUE));
+static VALUE
+control_block_alloc( VALUE klass )
+{
+	VALUE cb;
+	aiocb_t* cb_t;
+	cb = Data_Make_Struct(klass, aiocb_t, mark_control_block, free_control_block, cb_t);
+    return cb;
 }
 
 /*
@@ -252,6 +273,9 @@ static VALUE rb_aio_s_read_multi( VALUE aio, VALUE files ){
 void Init_aio()
 {	
     mAio = rb_define_module("AIO");
+
+	rb_cControlBlock  = rb_define_class_under( mAio, "ControlBlock", rb_cObject);
+    rb_define_alloc_func(rb_cControlBlock, control_block_alloc);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
