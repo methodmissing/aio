@@ -216,7 +216,7 @@ control_block_validate(VALUE cb)
 	if (cbs->aio_offset < 0) rb_aio_error( "Invalid file offset" );    
 	if (cbs->aio_reqprio < 0) rb_aio_error( "Invalid request priority" );
 	if (!cbs->aio_buf) rb_aio_error( "No buffer allocated" );	
-	return Qnil;    
+	return cb;    
 }
 
 /*

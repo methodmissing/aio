@@ -66,10 +66,17 @@ class TestControlBlock < Test::Unit::TestCase
   end
     
   def test_validate!
+    assert_invalid{ @cb.fildes = 0 }
     assert_invalid{ @cb.offset = -1 }
     assert_invalid{ @cb.nbytes = 0 }
     assert_invalid{ @cb.nbytes = -1 }
     assert_invalid{ @cb.reqprio = -1 }
+    cb = AIO::CB.new do 
+      self.fildes = 1
+      self.offset = 0
+      self.nbytes = 4096
+    end
+    assert_equal cb, cb.validate!      
   end
 
   private
