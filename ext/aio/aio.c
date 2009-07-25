@@ -128,6 +128,9 @@ control_block_nbytes_set(VALUE cb, VALUE bytes){
  	aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(bytes, T_FIXNUM);
 	cbs->aio_nbytes = FIX2INT(bytes);
+	if (cbs->aio_buf != NULL) xfree(&cbs->aio_buf);
+	cbs->aio_buf = malloc(cbs->aio_nbytes + 1);
+	if (!cbs->aio_buf) rb_aio_error( "not able to allocate a read buffer!" );	
 	return bytes;
 }
 
