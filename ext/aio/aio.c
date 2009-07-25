@@ -44,7 +44,7 @@
 
 static VALUE mAio, eAio;
 
-VALUE rb_cControlBlock;
+VALUE rb_cCB;
 
 typedef struct aiocb aiocb_t;
 
@@ -58,8 +58,11 @@ static void rb_aio_error( char * msg ){
     rb_raise( eAio, msg );
 }
 
+#define GetCBStruct(obj)	(Check_Type(obj, T_DATA), (aiocb_t*)DATA_PTR(obj))
+
 static void mark_control_block(aiocb_t* cb)
 {
+	rb_gc_mark(cb->aio_buf);
 }
 
 static void free_control_block(aiocb_t* cb)
@@ -71,10 +74,61 @@ static VALUE control_block_alloc _((VALUE));
 static VALUE
 control_block_alloc( VALUE klass )
 {
-	VALUE cb;
-	aiocb_t* cb_t;
-	cb = Data_Make_Struct(klass, aiocb_t, mark_control_block, free_control_block, cb_t);
-    return cb;
+	VALUE obj;
+	aiocb_t* cb;
+	obj = Data_Make_Struct(klass, aiocb_t, mark_control_block, free_control_block, cb);
+    bzero(cb, sizeof(aiocb_t));
+	cb->aio_fildes = 0; 
+	cb->aio_buf = NULL; 
+	cb->aio_nbytes = 0;
+	cb->aio_reqprio = 0;
+    return obj;
+}
+
+static VALUE
+control_block_initialize(VALUE cb)
+{
+	return GetCBStruct(cb);
+}
+
+static VALUE
+control_block_fildes_get(VALUE cb){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->aio_fildes);
+}
+
+static VALUE
+control_block_fildes_set(VALUE cb, VALUE fd){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	Check_Type(fd, T_FIXNUM);
+	cbs->aio_fildes = FIX2INT(fd);
+	return fd;
+}
+
+static VALUE
+control_block_buf_get(VALUE cb){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	return cbs->aio_buf == NULL ? Qnil : rb_str_new(&cbs->aio_buf, cbs->aio_nbytes);
+}
+
+static VALUE
+control_block_nbytes_get(VALUE cb){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->aio_nbytes);
+}
+
+static VALUE
+control_block_nbytes_set(VALUE cb, VALUE bytes){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	Check_Type(bytes, T_FIXNUM);
+	cbs->aio_nbytes = FIX2INT(bytes);
+	return bytes;
+}
+
+static VALUE
+control_block_reqprio_get(VALUE cb){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->aio_reqprio);
 }
 
 /*
@@ -274,8 +328,15 @@ void Init_aio()
 {	
     mAio = rb_define_module("AIO");
 
-	rb_cControlBlock  = rb_define_class_under( mAio, "ControlBlock", rb_cObject);
-    rb_define_alloc_func(rb_cControlBlock, control_block_alloc);
+	rb_cCB  = rb_define_class_under( mAio, "CB", rb_cObject);
+    rb_define_alloc_func(rb_cCB, control_block_alloc);
+    rb_define_method(rb_cCB, "initialize", control_block_initialize, 0);
+    rb_define_method(rb_cCB, "fildes", control_block_fildes_get, 0);
+    rb_define_method(rb_cCB, "fildes=", control_block_fildes_set, 1);
+    rb_define_method(rb_cCB, "buf", control_block_buf_get, 0);
+    rb_define_method(rb_cCB, "nbytes", control_block_nbytes_get, 0);
+    rb_define_method(rb_cCB, "nbytes=", control_block_nbytes_set, 1);
+    rb_define_method(rb_cCB, "reqprio", control_block_reqprio_get, 0);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
