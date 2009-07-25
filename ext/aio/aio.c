@@ -106,9 +106,13 @@ control_block_alloc(VALUE klass)
 }
 
 static VALUE
-control_block_initialize(VALUE cb)
+control_block_initialize(int argc, VALUE *argv, VALUE cb)
 {
-	return GetCBStruct(cb);
+	aiocb_t *cbs = GetCBStruct(cb);
+	if (rb_block_given_p()){
+		rb_obj_instance_eval( 0, 0, cb );
+	}
+	return cb;
 }
 
 static VALUE
@@ -414,7 +418,7 @@ void Init_aio()
 
 	rb_cCB  = rb_define_class_under( mAio, "CB", rb_cObject);
     rb_define_alloc_func(rb_cCB, control_block_alloc);
-    rb_define_method(rb_cCB, "initialize", control_block_initialize, 0);
+    rb_define_method(rb_cCB, "initialize", control_block_initialize, -1);
     rb_define_method(rb_cCB, "fildes", control_block_fildes_get, 0);
     rb_define_method(rb_cCB, "fildes=", control_block_fildes_set, 1);
     rb_define_method(rb_cCB, "buf", control_block_buf_get, 0);

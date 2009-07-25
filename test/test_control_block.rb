@@ -6,6 +6,13 @@ class TestControlBlock < Test::Unit::TestCase
     @cb = AIO::CB.new
   end
   
+  def test_init_with_block
+    cb = AIO::CB.new do 
+      self.fildes = 12
+    end  
+    assert_equal 12, cb.fildes
+  end
+  
   def test_file_descriptor
     assert_equal 0, @cb.fildes
     assert_equal 12, @cb.fildes = 12
