@@ -81,7 +81,13 @@ control_block_alloc( VALUE klass )
 	cb->aio_fildes = 0; 
 	cb->aio_buf = NULL; 
 	cb->aio_nbytes = 0;
+	cb->aio_offset = 0;
 	cb->aio_reqprio = 0;
+	cb->aio_lio_opcode = LIO_READ;
+	/* Disable signals for the time being */
+	cb->aio_sigevent.sigev_notify = SIGEV_NONE;
+	cb->aio_sigevent.sigev_signo = 0;
+	cb->aio_sigevent.sigev_value.sival_int = 0;
     return obj;
 }
 
@@ -126,9 +132,39 @@ control_block_nbytes_set(VALUE cb, VALUE bytes){
 }
 
 static VALUE
+control_block_offset_get(VALUE cb){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->aio_offset);
+}
+
+static VALUE
+control_block_offset_set(VALUE cb, VALUE offset){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	Check_Type(offset, T_FIXNUM);
+	cbs->aio_offset = FIX2INT(offset);
+	return offset;
+}
+
+static VALUE
 control_block_reqprio_get(VALUE cb){
  	aiocb_t *cbs = GetCBStruct(cb);
 	return INT2FIX(cbs->aio_reqprio);
+}
+
+static VALUE
+control_block_lio_opcode_get(VALUE cb){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->aio_lio_opcode);
+}
+
+static VALUE
+control_block_lio_opcode_set(VALUE cb, VALUE opcode){
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	Check_Type(opcode, T_FIXNUM);
+	if ( NUM2INT(opcode) != LIO_READ && NUM2INT(opcode) != LIO_WRITE )
+		rb_aio_error("Only AIO::READ and AIO::WRITE modes supported!");
+	cbs->aio_lio_opcode = NUM2INT(opcode);
+	return opcode;
 }
 
 /*
@@ -336,10 +372,16 @@ void Init_aio()
     rb_define_method(rb_cCB, "buf", control_block_buf_get, 0);
     rb_define_method(rb_cCB, "nbytes", control_block_nbytes_get, 0);
     rb_define_method(rb_cCB, "nbytes=", control_block_nbytes_set, 1);
+    rb_define_method(rb_cCB, "offset", control_block_offset_get, 0);
+    rb_define_method(rb_cCB, "offset=", control_block_offset_set, 1);
     rb_define_method(rb_cCB, "reqprio", control_block_reqprio_get, 0);
+    rb_define_method(rb_cCB, "lio_opcode", control_block_lio_opcode_get, 0);
+    rb_define_method(rb_cCB, "lio_opcode=", control_block_lio_opcode_set, 1);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
+    rb_define_const(mAio, "READ", INT2NUM(LIO_READ));
+    rb_define_const(mAio, "WRITE", INT2NUM(LIO_WRITE));
 
     eAio = rb_define_class_under(mAio, "Error", rb_eStandardError);
 
