@@ -70,24 +70,38 @@ static void free_control_block(aiocb_t* cb)
     xfree(cb);
 }
 
+static void
+control_block_reset0(aiocb_t *cb)
+{
+    bzero(cb, sizeof(aiocb_t));
+    cb->aio_fildes = 0; 
+    cb->aio_buf = NULL; 
+    cb->aio_nbytes = 0;
+    cb->aio_offset = 0;
+    cb->aio_reqprio = 0;
+    cb->aio_lio_opcode = LIO_READ;
+    /* Disable signals for the time being */
+    cb->aio_sigevent.sigev_notify = SIGEV_NONE;
+    cb->aio_sigevent.sigev_signo = 0;
+    cb->aio_sigevent.sigev_value.sival_int = 0;
+}
+
+static VALUE
+control_block_reset(VALUE cb)
+{
+	aiocb_t *cbs = GetCBStruct(cb);
+	control_block_reset0(cbs);
+	return cb;
+}
+
 static VALUE control_block_alloc _((VALUE));
 static VALUE
-control_block_alloc( VALUE klass )
+control_block_alloc(VALUE klass)
 {
 	VALUE obj;
-	aiocb_t* cb;
+	aiocb_t *cb;
 	obj = Data_Make_Struct(klass, aiocb_t, mark_control_block, free_control_block, cb);
-    bzero(cb, sizeof(aiocb_t));
-	cb->aio_fildes = 0; 
-	cb->aio_buf = NULL; 
-	cb->aio_nbytes = 0;
-	cb->aio_offset = 0;
-	cb->aio_reqprio = 0;
-	cb->aio_lio_opcode = LIO_READ;
-	/* Disable signals for the time being */
-	cb->aio_sigevent.sigev_notify = SIGEV_NONE;
-	cb->aio_sigevent.sigev_signo = 0;
-	cb->aio_sigevent.sigev_value.sival_int = 0;
+	control_block_reset0(cb);	
     return obj;
 }
 
@@ -98,13 +112,15 @@ control_block_initialize(VALUE cb)
 }
 
 static VALUE
-control_block_fildes_get(VALUE cb){
+control_block_fildes_get(VALUE cb)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	return INT2FIX(cbs->aio_fildes);
 }
 
 static VALUE
-control_block_fildes_set(VALUE cb, VALUE fd){
+control_block_fildes_set(VALUE cb, VALUE fd)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(fd, T_FIXNUM);
 	cbs->aio_fildes = FIX2INT(fd);
@@ -112,36 +128,41 @@ control_block_fildes_set(VALUE cb, VALUE fd){
 }
 
 static VALUE
-control_block_buf_get(VALUE cb){
+control_block_buf_get(VALUE cb)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	return cbs->aio_buf == NULL ? Qnil : rb_str_new(&cbs->aio_buf, cbs->aio_nbytes);
 }
 
 static VALUE
-control_block_nbytes_get(VALUE cb){
+control_block_nbytes_get(VALUE cb)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	return INT2FIX(cbs->aio_nbytes);
 }
 
 static VALUE
-control_block_nbytes_set(VALUE cb, VALUE bytes){
+control_block_nbytes_set(VALUE cb, VALUE bytes)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(bytes, T_FIXNUM);
 	cbs->aio_nbytes = FIX2INT(bytes);
 	if (cbs->aio_buf != NULL) xfree(&cbs->aio_buf);
 	cbs->aio_buf = malloc(cbs->aio_nbytes + 1);
-	if (!cbs->aio_buf) rb_aio_error( "not able to allocate a read buffer!" );	
+	if (!cbs->aio_buf) rb_aio_error( "not able to allocate a read buffer" );	
 	return bytes;
 }
 
 static VALUE
-control_block_offset_get(VALUE cb){
+control_block_offset_get(VALUE cb)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	return INT2FIX(cbs->aio_offset);
 }
 
 static VALUE
-control_block_offset_set(VALUE cb, VALUE offset){
+control_block_offset_set(VALUE cb, VALUE offset)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(offset, T_FIXNUM);
 	cbs->aio_offset = FIX2INT(offset);
@@ -149,25 +170,49 @@ control_block_offset_set(VALUE cb, VALUE offset){
 }
 
 static VALUE
-control_block_reqprio_get(VALUE cb){
+control_block_reqprio_get(VALUE cb)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	return INT2FIX(cbs->aio_reqprio);
 }
 
 static VALUE
-control_block_lio_opcode_get(VALUE cb){
+control_block_reqprio_set(VALUE cb, VALUE reqprio)
+{
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	Check_Type(reqprio, T_FIXNUM);
+	cbs->aio_reqprio = FIX2INT(reqprio);
+	return reqprio;
+}
+
+static VALUE
+control_block_lio_opcode_get(VALUE cb)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	return INT2FIX(cbs->aio_lio_opcode);
 }
 
 static VALUE
-control_block_lio_opcode_set(VALUE cb, VALUE opcode){
+control_block_lio_opcode_set(VALUE cb, VALUE opcode)
+{
  	aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(opcode, T_FIXNUM);
 	if ( NUM2INT(opcode) != LIO_READ && NUM2INT(opcode) != LIO_WRITE )
-		rb_aio_error("Only AIO::READ and AIO::WRITE modes supported!");
+		rb_aio_error("Only AIO::READ and AIO::WRITE modes supported");
 	cbs->aio_lio_opcode = NUM2INT(opcode);
 	return opcode;
+}
+
+static VALUE
+control_block_validate(VALUE cb)
+{
+ 	aiocb_t *cbs = GetCBStruct(cb);
+	if (cbs->aio_fildes <= 0) rb_aio_error( "Invalid file descriptor" );    
+	if (cbs->aio_nbytes <= 0) rb_aio_error( "Invalid buffer length" );    
+	if (cbs->aio_offset < 0) rb_aio_error( "Invalid file offset" );    
+	if (cbs->aio_reqprio < 0) rb_aio_error( "Invalid request priority" );
+	if (!cbs->aio_buf) rb_aio_error( "No buffer allocated" );	
+	return Qnil;    
 }
 
 /*
@@ -378,8 +423,11 @@ void Init_aio()
     rb_define_method(rb_cCB, "offset", control_block_offset_get, 0);
     rb_define_method(rb_cCB, "offset=", control_block_offset_set, 1);
     rb_define_method(rb_cCB, "reqprio", control_block_reqprio_get, 0);
+    rb_define_method(rb_cCB, "reqprio=", control_block_reqprio_set, 1);
     rb_define_method(rb_cCB, "lio_opcode", control_block_lio_opcode_get, 0);
     rb_define_method(rb_cCB, "lio_opcode=", control_block_lio_opcode_set, 1);
+    rb_define_method(rb_cCB, "validate!", control_block_validate, 0);
+    rb_define_method(rb_cCB, "reset!", control_block_reset, 0);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
