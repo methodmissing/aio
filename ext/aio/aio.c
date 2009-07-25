@@ -70,6 +70,37 @@ static void free_control_block(aiocb_t* cb)
     xfree(cb);
 }
 
+static VALUE
+control_block_open(VALUE cb, VALUE file)
+{
+#ifdef HAVE_TBR
+	rb_io_t *fptr;
+#else	
+	OpenFile *fptr;
+#endif
+    aiocb_t *cbs = GetCBStruct(cb);
+	VALUE io;
+
+    struct stat stats;
+   
+    Check_Type(file, T_STRING);	
+
+    io = rb_file_open(RSTRING_PTR(file), "r");
+    GetOpenFile(io, fptr);
+    rb_io_check_readable(fptr); 	
+
+    if ( cbs->aio_fildes == 0 && cbs->aio_nbytes == 0){
+#ifdef HAVE_TBR
+      cbs->aio_fildes = fptr->fd;
+#else	
+      cbs->aio_fildes = fileno(fptr->f);
+#endif
+      fstat(cbs->aio_fildes, &stats);
+      cbs->aio_nbytes = stats.st_size;
+    }
+	return io;    
+}
+
 static void
 control_block_reset0(aiocb_t *cb)
 {
@@ -432,6 +463,7 @@ void Init_aio()
     rb_define_method(rb_cCB, "lio_opcode=", control_block_lio_opcode_set, 1);
     rb_define_method(rb_cCB, "validate!", control_block_validate, 0);
     rb_define_method(rb_cCB, "reset!", control_block_reset, 0);
+    rb_define_method(rb_cCB, "open", control_block_open, 1);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));

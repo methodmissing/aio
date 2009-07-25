@@ -6,6 +6,12 @@ class TestControlBlock < Test::Unit::TestCase
     @cb = AIO::CB.new
   end
   
+  def test_open
+    @cb.open( fixtures( '1.txt' ).first ) 
+    assert_equal 3, @cb.fildes
+    assert_equal 3, @cb.nbytes
+  end  
+  
   def test_init_with_block
     cb = AIO::CB.new do 
       self.fildes = 12
