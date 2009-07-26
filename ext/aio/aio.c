@@ -545,7 +545,7 @@ rb_aio_return( rb_aiocb_t *cb )
 {	
 	int ret;
 	TRAP_BEG;
-    ret = aio_return( cb->cb );
+    ret = aio_return( cb );
 	TRAP_END;			
     if (ret != 0) rb_aio_return_error();
 	return INT2FIX(ret);
@@ -555,7 +555,7 @@ static VALUE
 rb_aio_s_return( VALUE aio, VALUE cb )
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);	
-    return rb_aio_return( &cbs );	
+    return rb_aio_return( &cbs->cb );	
 }
 
 void Init_aio()
