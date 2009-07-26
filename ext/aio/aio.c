@@ -202,7 +202,7 @@ static VALUE
 control_block_buf_get(VALUE cb)
 {
  	rb_aiocb_t *cbs = GetCBStruct(cb);
-	return cbs->cb.aio_buf == NULL ? Qnil : rb_str_new(&cbs->cb.aio_buf, cbs->cb.aio_nbytes);
+	return cbs->cb.aio_buf == NULL ? Qnil : rb_str_new2(cbs->cb.aio_buf);
 }
 
 static VALUE

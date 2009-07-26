@@ -16,7 +16,9 @@ class TestAio < Test::Unit::TestCase
 
   def test_read_multi_non_blocking
     cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| AIO::CB.new(f) }
-    assert_equal nil, AIO.lio_listio( *([AIO::NOWAIT].concat(cbs)) )        
+    assert_equal nil, AIO.lio_listio( *([AIO::NOWAIT].concat(cbs)) )     
+    sleep(1)
+    assert_equal %w(one two three four), cbs.map{|cb| cb.buf }   
   end
 
   def test_read_multi_limits
