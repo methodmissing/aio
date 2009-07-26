@@ -83,20 +83,23 @@ control_block_nbytes_set(VALUE cb, VALUE bytes)
 }
 
 static VALUE
-control_block_open(VALUE cb, VALUE file)
+control_block_open(int argc, VALUE *argv, VALUE cb)
 {
 #ifdef HAVE_TBR
 	rb_io_t *fptr;
 #else	
 	OpenFile *fptr;
 #endif
+	VALUE file, mode;
     rb_aiocb_t *cbs = GetCBStruct(cb);
-
+	rb_scan_args(argc, argv, "02", &file, &mode);
+	if NIL_P(mode) mode = rb_str_new2("r");
     struct stat stats;
    
     Check_Type(file, T_STRING);	
+    Check_Type(file, T_STRING);
 
-    cbs->io = rb_file_open(RSTRING_PTR(file), "r");
+    cbs->io = rb_file_open(RSTRING_PTR(file), RSTRING_PTR(mode));
     GetOpenFile(cbs->io, fptr);
     rb_io_check_readable(fptr); 	
 
@@ -153,8 +156,12 @@ static VALUE
 control_block_initialize(int argc, VALUE *argv, VALUE cb)
 {
 	VALUE file;
+	VALUE args[1];
 	rb_scan_args(argc, argv, "01", &file);
-	if (RTEST(file)) control_block_open(cb, file);
+	if (RTEST(file)){ 
+	  args[0] = file;	
+	  control_block_open(1, (VALUE *)args, cb);
+    }
 	if (rb_block_given_p()) rb_obj_instance_eval( 0, 0, cb );
 	return cb;
 }
@@ -482,7 +489,7 @@ void Init_aio()
     rb_define_method(rb_cCB, "lio_opcode=", control_block_lio_opcode_set, 1);
     rb_define_method(rb_cCB, "validate!", control_block_validate, 0);
     rb_define_method(rb_cCB, "reset!", control_block_reset, 0);
-    rb_define_method(rb_cCB, "open", control_block_open, 1);
+    rb_define_method(rb_cCB, "open", control_block_open, -1);
     rb_define_method(rb_cCB, "open?", control_block_open_p, 0);
     rb_define_method(rb_cCB, "close!", control_block_close, 0);
     rb_define_method(rb_cCB, "path", control_block_path, 0);
