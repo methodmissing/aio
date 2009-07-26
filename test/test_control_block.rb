@@ -14,6 +14,12 @@ class TestControlBlock < Test::Unit::TestCase
       @cb.validate!
     end
   end  
+
+  def test_open?
+    assert !@cb.open?
+    @cb.open( fixtures( '2.txt' ).first )
+    assert @cb.open?    
+  end
   
   def test_init_with_block
     cb = AIO::CB.new do 

@@ -97,14 +97,13 @@ control_block_open(VALUE cb, VALUE file)
 	OpenFile *fptr;
 #endif
     rb_aiocb_t *cbs = GetCBStruct(cb);
-	VALUE io;
 
     struct stat stats;
    
     Check_Type(file, T_STRING);	
 
-    io = rb_file_open(RSTRING_PTR(file), "r");
-    GetOpenFile(io, fptr);
+    cbs->io = rb_file_open(RSTRING_PTR(file), "r");
+    GetOpenFile(cbs->io, fptr);
     rb_io_check_readable(fptr); 	
 
     if ( cbs->cb.aio_fildes == 0 && cbs->cb.aio_nbytes == 0){
@@ -116,14 +115,14 @@ control_block_open(VALUE cb, VALUE file)
       fstat(cbs->cb.aio_fildes, &stats);
 	  control_block_nbytes_set(cb, INT2FIX(stats.st_size));
     }
-	return io;    
+	return cb;    
 }
 
 static void
 control_block_reset0(rb_aiocb_t *cb)
-{
+{    
     bzero(cb, sizeof(rb_aiocb_t));
-    /* TODO: Property cleanup this IO instance */
+    /* cleanup with rb_io_close(cb->io) */
     cb->io = Qnil;
     cb->cb.aio_fildes = 0; 
     cb->cb.aio_buf = NULL; 
@@ -255,6 +254,13 @@ control_block_validate(VALUE cb)
 	if (cbs->cb.aio_reqprio < 0) rb_aio_error( "Invalid request priority" );
 	if (!cbs->cb.aio_buf) rb_aio_error( "No buffer allocated" );	
 	return cb;    
+}
+
+static VALUE
+control_block_open_p(VALUE cb)
+{
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	return NIL_P(cbs->io) ? Qfalse : Qtrue;
 }
 
 /*
@@ -470,6 +476,7 @@ void Init_aio()
     rb_define_method(rb_cCB, "validate!", control_block_validate, 0);
     rb_define_method(rb_cCB, "reset!", control_block_reset, 0);
     rb_define_method(rb_cCB, "open", control_block_open, 1);
+    rb_define_method(rb_cCB, "open?", control_block_open_p, 0);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
