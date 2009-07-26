@@ -14,6 +14,12 @@ class TestControlBlock < Test::Unit::TestCase
       @cb.validate!
     end
   end  
+  
+  def test_open_access_mode
+    assert_raises ArgumentError do
+      @cb.open( fixtures( '1.txt' ).first, "ww" )
+    end
+  end
 
   def test_path
     assert_equal '', @cb.path
