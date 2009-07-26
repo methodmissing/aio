@@ -34,11 +34,16 @@ class TestAio < Test::Unit::TestCase
     assert !cb.open?
   end
 
-  def test_cancel
+  def test_cancel_with_cb
     cb = AIO::CB.new(fixtures( '1.txt' ).first)
     assert cb.open?    
     AIO.read( cb )
     assert_equal AIO::ALLDONE, AIO.cancel( cb.fildes, cb )
+  end
+
+  def test_cancel_without_cb
+    cb = AIO::CB.new(fixtures( '1.txt' ).first)
+    assert_equal AIO::ALLDONE, AIO.cancel( cb.fildes )
   end
   
   def test_cancel_invalid_fd
