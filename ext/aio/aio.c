@@ -158,9 +158,12 @@ control_block_alloc(VALUE klass)
 static VALUE
 control_block_initialize(int argc, VALUE *argv, VALUE cb)
 {
+	VALUE file;
+	rb_scan_args(argc, argv, "01", &file);
 	if (rb_block_given_p()){
 		rb_obj_instance_eval( 0, 0, cb );
 	}
+	if (RTEST(file)) control_block_open(cb, file);
 	return cb;
 }
 

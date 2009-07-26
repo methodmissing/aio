@@ -8,7 +8,7 @@ class TestControlBlock < Test::Unit::TestCase
 
   def test_open
     @cb.open( fixtures( '1.txt' ).first ) 
-    assert_equal 3, @cb.fildes
+    assert (2..5).include?( @cb.fildes )
     assert_equal 3, @cb.nbytes
     assert_nothing_raised do
       @cb.validate!
@@ -27,6 +27,11 @@ class TestControlBlock < Test::Unit::TestCase
     assert @cb.open?    
     assert_equal true, @cb.close!    
     assert !@cb.open?
+  end
+
+  def test_init_with_file
+    cb = AIO::CB.new fixtures( '2.txt' ).first
+    assert cb.open?
   end
   
   def test_init_with_block
