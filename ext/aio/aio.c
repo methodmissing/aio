@@ -297,7 +297,8 @@ control_block_close(VALUE cb)
  *  Error handling for aio_read
  */
 static void 
-rb_aio_read_error(){
+rb_aio_read_error()
+{
     switch(errno){
        case EAGAIN: 
 	        rb_aio_error( "The request cannot be queued due to exceeding resource (queue) limitations." );
@@ -315,7 +316,8 @@ rb_aio_read_error(){
  *  Initiates a *blocking* aio_read
  */
 static VALUE 
-rb_aio_read( aiocb_t *cb ){
+rb_aio_read( aiocb_t *cb )
+{
 	int ret;
 	
 	TRAP_BEG;
@@ -334,7 +336,8 @@ rb_aio_read( aiocb_t *cb ){
  *  Error handling for lio_listio
  */
 static void 
-rb_aio_read_multi_error(){
+rb_aio_read_multi_error()
+{
     switch(errno){
        case EAGAIN: 
 	        rb_aio_error( "Resources necessary to queue all the requests are not available at the moment." );
@@ -351,26 +354,48 @@ rb_aio_read_multi_error(){
 /*
  *  Initiates lio_listio
  */
-static VALUE 
-rb_aio_lio_listio( VALUE *cbs ){
+static int 
+rb_aio_lio_listio( int mode, VALUE *cbs, aiocb_t **list )
+{
 	int op, ret;
-	aiocb_t *list[AIO_MAX_LIST];
-	int reads = RARRAY_LEN(cbs);
-	
+	int ops = RARRAY_LEN(cbs);	
     bzero( (char *)list, sizeof(list) );	
-    VALUE results = rb_ary_new2( reads );
-    for (op=0; op < reads; op++) {		
+    for (op=0; op < ops; op++) {		
 	    rb_aiocb_t *cb = GetCBStruct(RARRAY_PTR(cbs)[op]);
 		list[op] = &cb->cb;       
     }
 	TRAP_BEG;
-    ret = lio_listio( LIO_WAIT, &list, reads, NULL );
+    ret = lio_listio( mode, list, ops, NULL );
 	TRAP_END;
 	if (ret != 0) rb_aio_read_multi_error();
-    for (op=0; op < reads; op++) {
-		rb_ary_push( results, rb_tainted_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
+	return ops; 	
+}
+
+/*
+ *  Blocking lio_listio
+ */
+static VALUE
+rb_aio_lio_listio_blocking( VALUE *cbs )
+{
+	aiocb_t *list[AIO_MAX_LIST];
+	int op;
+	int ops = rb_aio_lio_listio( LIO_WAIT, cbs, &list );
+    VALUE results = rb_ary_new2( ops );
+    for (op=0; op < ops; op++) {
+        rb_ary_push( results, rb_tainted_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
     } 
-	return results;
+    return results;
+}	
+
+/*
+ *  Non-blocking lio_listio
+ */
+static VALUE
+rb_aio_lio_listio_non_blocking( VALUE *cbs )
+{
+	aiocb_t *list[AIO_MAX_LIST];
+	rb_aio_lio_listio( LIO_NOWAIT, cbs, &list );
+	return Qnil;
 }
 
 /*
@@ -421,9 +446,20 @@ rb_aio_s_read( VALUE aio, VALUE cb ){
  */
 static VALUE 
 rb_aio_s_lio_listio( VALUE aio, VALUE cbs ){
-	int reads = RARRAY_LEN(cbs);
-	if (reads > AIO_MAX_LIST) rb_aio_error( "maximum number of AIO calls exceeded!" );
-	return rb_ensure( rb_aio_lio_listio, (VALUE)cbs, rb_io_closes, cbs );
+	VALUE mode_arg, mode;
+	mode_arg = RARRAY_PTR(cbs)[0];
+	if (mode_arg == INT2NUM(LIO_WAIT) || mode_arg == INT2NUM(LIO_NOWAIT)){
+		mode = rb_ary_shift(cbs);
+	}else{
+	    mode = INT2NUM(LIO_WAIT);
+	}
+	int ops = RARRAY_LEN(cbs);
+	if (ops > AIO_MAX_LIST) rb_aio_error( "maximum number of AIO calls exceeded!" );
+	if (mode == INT2NUM(LIO_WAIT)){
+	    return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, cbs );
+	}else{
+		return rb_ensure( rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, cbs );
+	}	
 }
 
 void Init_aio()
