@@ -469,6 +469,60 @@ rb_aio_s_lio_listio( VALUE aio, VALUE cbs ){
 	}	
 }
 
+/*
+ *  Error handling for lio_listio
+ */
+static void 
+rb_aio_cancel_error()
+{
+    switch(errno){
+       case EBADF: 
+	        rb_aio_error( "Invalid file descriptor." );
+		    break;
+       case EINVAL: 
+	        rb_aio_error( "No asynchronous I/O has ever been requested for the file descriptor." );
+			break;
+       case ENOMEM: 
+            rb_aio_error( "There were no Kernel control blocks available to service this request." );
+			break;
+	}
+}
+
+static VALUE 
+rb_aio_cancel( int fd, void *cb )
+{	
+	int ret;
+	TRAP_BEG;
+    ret = aio_cancel( fd, cb );
+	TRAP_END;
+	if (ret != 0) rb_aio_cancel_error();
+    switch(ret){
+       case AIO_CANCELED: 
+	        return INT2NUM(AIO_CANCELED);
+		    break;
+       case AIO_NOTCANCELED: 
+	        return INT2NUM(AIO_NOTCANCELED);
+			break;
+       case AIO_ALLDONE: 
+            return INT2NUM(AIO_ALLDONE);
+			break;
+	}			
+}
+
+static VALUE 
+rb_aio_s_cancel(int argc, VALUE *argv, VALUE aio)
+{
+	VALUE fd, cb;
+    rb_scan_args(argc, argv, "02", &fd, &cb);
+	if (NIL_P(fd) || TYPE(fd) != T_FIXNUM) rb_aio_error("No file descriptor given");
+    if (NIL_P(cb)){
+	   return rb_aio_cancel( NUM2INT(fd), NULL );
+    }else{
+       rb_aiocb_t *cbs = GetCBStruct(cb);	
+	   return rb_aio_cancel( NUM2INT(fd), &cbs->cb );	
+	}
+}
+
 void Init_aio()
 {	
     mAio = rb_define_module("AIO");
@@ -507,5 +561,6 @@ void Init_aio()
 
     rb_define_module_function( mAio, "lio_listio", rb_aio_s_lio_listio, -2 );
     rb_define_module_function( mAio, "read", rb_aio_s_read, 1 );
+    rb_define_module_function( mAio, "cancel", rb_aio_s_cancel, -1 );
 
 }

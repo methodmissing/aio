@@ -22,7 +22,7 @@ class TestAio < Test::Unit::TestCase
   end
 
   def test_read_multi_limits
-    assert_raises AIO::Error do
+    assert_aio_error do
       AIO.lio_listio( *fixtures( *([AIO::CB.new] * 17)) )
     end  
   end 
@@ -32,6 +32,19 @@ class TestAio < Test::Unit::TestCase
     assert cb.open?
     assert_equal 'one', AIO.read( cb )
     assert !cb.open?
+  end
+
+  def test_cancel
+    cb = AIO::CB.new(fixtures( '1.txt' ).first)
+    assert cb.open?    
+    AIO.read( cb )
+    assert_equal AIO::ALLDONE, AIO.cancel( cb.fildes, cb )
+  end
+  
+  def test_cancel_invalid_fd
+    assert_aio_error do
+      AIO.cancel( 'fd' )
+    end
   end
   
 end

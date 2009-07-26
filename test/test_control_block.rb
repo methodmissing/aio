@@ -120,7 +120,7 @@ class TestControlBlock < Test::Unit::TestCase
   private
   
     def assert_invalid( &block )
-      assert_raises AIO::Error do
+      assert_aio_error do
         block.call
         @cb.validate!
         @cb.reset!        
