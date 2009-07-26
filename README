@@ -1,1 +1,6 @@
-h1. Work in progress
+POSIX Realtime IO extension for Ruby 
+  (c) 2009 Lourens Naudé (methodmissing), James Tucker (raggi) and Aman Gupta (tmm1)
+ 
+  http://github.com/methodmissing/rb_aio
+
+Work in progress.See http://www.opengroup.org/onlinepubs/009695399/basedefs/aio.h.html

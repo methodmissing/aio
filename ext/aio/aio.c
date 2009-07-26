@@ -451,8 +451,12 @@ void Init_aio()
     rb_define_method(rb_cCB, "close!", control_block_close, 0);
     rb_define_method(rb_cCB, "path", control_block_path, 0);
 
+    rb_define_const(mAio, "ALLDONE", INT2NUM(AIO_ALLDONE));
+    rb_define_const(mAio, "CANCELED", INT2NUM(AIO_CANCELED));
+    rb_define_const(mAio, "NOTCANCELED", INT2NUM(AIO_NOTCANCELED));
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
+    rb_define_const(mAio, "NOP", INT2NUM(LIO_NOP));
     rb_define_const(mAio, "READ", INT2NUM(LIO_READ));
     rb_define_const(mAio, "WRITE", INT2NUM(LIO_WRITE));
 
