@@ -424,7 +424,8 @@ rb_io_closes( VALUE cbs ){
  *  cross platform notification is supported.
  */
 static VALUE 
-rb_aio_s_read( VALUE aio, VALUE cb ){
+rb_aio_s_read( VALUE aio, VALUE cb )
+{
     rb_aiocb_t *cbs = GetCBStruct(cb);
     return rb_ensure( rb_aio_read, (VALUE)&cbs->cb, control_block_close, cb );
 }
@@ -452,7 +453,8 @@ rb_aio_s_read( VALUE aio, VALUE cb ){
  *  close_nocancel(0x3)	 = 0 0
  */
 static VALUE 
-rb_aio_s_lio_listio( VALUE aio, VALUE cbs ){
+rb_aio_s_lio_listio( VALUE aio, VALUE cbs )
+{
 	VALUE mode_arg, mode;
 	mode_arg = RARRAY_PTR(cbs)[0];
 	if (mode_arg == INT2NUM(LIO_WAIT) || mode_arg == INT2NUM(LIO_NOWAIT)){
@@ -470,7 +472,7 @@ rb_aio_s_lio_listio( VALUE aio, VALUE cbs ){
 }
 
 /*
- *  Error handling for lio_listio
+ *  Error handling for aio_cancel
  */
 static void 
 rb_aio_cancel_error()
@@ -523,6 +525,39 @@ rb_aio_s_cancel(int argc, VALUE *argv, VALUE aio)
 	}
 }
 
+/*
+ *  Error handling for aio_return
+ */
+static void 
+rb_aio_return_error()
+{
+    switch(errno){
+       case ENOMEM: 
+            rb_aio_error( "There were no Kernel control blocks available to service this request." );
+			break;
+	   default:
+	        break;	
+	}
+}
+
+static VALUE 
+rb_aio_return( rb_aiocb_t *cb )
+{	
+	int ret;
+	TRAP_BEG;
+    ret = aio_return( cb->cb );
+	TRAP_END;			
+    if (ret != 0) rb_aio_return_error();
+	return INT2FIX(ret);
+}
+
+static VALUE 
+rb_aio_s_return( VALUE aio, VALUE cb )
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);	
+    return rb_aio_return( &cbs );	
+}
+
 void Init_aio()
 {	
     mAio = rb_define_module("AIO");
@@ -548,6 +583,7 @@ void Init_aio()
     rb_define_method(rb_cCB, "close!", control_block_close, 0);
     rb_define_method(rb_cCB, "path", control_block_path, 0);
 
+    rb_define_const(mAio, "INPROGRESS", INT2NUM(EINPROGRESS));
     rb_define_const(mAio, "ALLDONE", INT2NUM(AIO_ALLDONE));
     rb_define_const(mAio, "CANCELED", INT2NUM(AIO_CANCELED));
     rb_define_const(mAio, "NOTCANCELED", INT2NUM(AIO_NOTCANCELED));
@@ -562,5 +598,6 @@ void Init_aio()
     rb_define_module_function( mAio, "lio_listio", rb_aio_s_lio_listio, -2 );
     rb_define_module_function( mAio, "read", rb_aio_s_read, 1 );
     rb_define_module_function( mAio, "cancel", rb_aio_s_cancel, -1 );
+    rb_define_module_function( mAio, "return", rb_aio_s_return, 1 );
 
 }

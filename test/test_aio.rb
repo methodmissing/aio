@@ -52,4 +52,10 @@ class TestAio < Test::Unit::TestCase
     end
   end
   
+  def test_return
+    cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| AIO::CB.new(f) }
+    AIO.lio_listio( *([AIO::NOWAIT].concat(cbs)) )
+    assert_equal nil, AIO.return(cbs.first)
+  end
+  
 end
