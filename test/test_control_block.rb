@@ -80,9 +80,6 @@ class TestControlBlock < Test::Unit::TestCase
   def test_lio_opcode
     assert_equal AIO::READ, @cb.lio_opcode
     assert_equal AIO::WRITE, @cb.lio_opcode = AIO::WRITE
-    assert_raises AIO::Error do
-      @cb.lio_opcode = 12
-    end
   end
   
   def test_reset
@@ -99,6 +96,7 @@ class TestControlBlock < Test::Unit::TestCase
     assert_invalid{ @cb.nbytes = 0 }
     assert_invalid{ @cb.nbytes = -1 }
     assert_invalid{ @cb.reqprio = -1 }
+    assert_invalid{ @cb.lio_opcode = 12 }
     cb = AIO::CB.new do 
       self.fildes = 1
       self.offset = 0

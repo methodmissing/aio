@@ -160,10 +160,8 @@ control_block_initialize(int argc, VALUE *argv, VALUE cb)
 {
 	VALUE file;
 	rb_scan_args(argc, argv, "01", &file);
-	if (rb_block_given_p()){
-		rb_obj_instance_eval( 0, 0, cb );
-	}
 	if (RTEST(file)) control_block_open(cb, file);
+	if (rb_block_given_p()) rb_obj_instance_eval( 0, 0, cb );
 	return cb;
 }
 
@@ -241,8 +239,6 @@ control_block_lio_opcode_set(VALUE cb, VALUE opcode)
 {
  	rb_aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(opcode, T_FIXNUM);
-	if ( NUM2INT(opcode) != LIO_READ && NUM2INT(opcode) != LIO_WRITE )
-		rb_aio_error("Only AIO::READ and AIO::WRITE modes supported");
 	cbs->cb.aio_lio_opcode = NUM2INT(opcode);
 	return opcode;
 }
@@ -255,6 +251,7 @@ control_block_validate(VALUE cb)
 	if (cbs->cb.aio_nbytes <= 0) rb_aio_error( "Invalid buffer length" );    
 	if (cbs->cb.aio_offset < 0) rb_aio_error( "Invalid file offset" );    
 	if (cbs->cb.aio_reqprio < 0) rb_aio_error( "Invalid request priority" );
+	if (cbs->cb.aio_lio_opcode != LIO_READ && cbs->cb.aio_lio_opcode != LIO_WRITE) rb_aio_error("Only AIO::READ and AIO::WRITE modes supported");
 	if (!cbs->cb.aio_buf) rb_aio_error( "No buffer allocated" );	
 	return cb;    
 }
