@@ -12,7 +12,7 @@ end
 =begin
 macbook-pros-computer:rb_aio_native lourens$ ruby bench/read.rb
       user     system      total        real
-AIO.aio_read  0.000000   0.000000   0.000000 (  0.000266)
+AIO.lio_listio  0.000000   0.000000   0.000000 (  0.000266)
 IO.read  0.000000   0.000000   0.000000 (  0.000378)
 
 |===================================================================

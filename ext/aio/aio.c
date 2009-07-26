@@ -296,7 +296,8 @@ control_block_close(VALUE cb)
 /*
  *  Error handling for aio_read
  */
-static void rb_aio_read_error(){
+static void 
+rb_aio_read_error(){
     switch(errno){
        case EAGAIN: 
 	        rb_aio_error( "The request cannot be queued due to exceeding resource (queue) limitations." );
@@ -313,7 +314,8 @@ static void rb_aio_read_error(){
 /*
  *  Initiates a *blocking* aio_read
  */
-static VALUE rb_aio_read( aiocb_t *cb ){
+static VALUE 
+rb_aio_read( aiocb_t *cb ){
 	int ret;
 	
 	TRAP_BEG;
@@ -331,7 +333,8 @@ static VALUE rb_aio_read( aiocb_t *cb ){
 /*
  *  Error handling for lio_listio
  */
-static void rb_aio_read_multi_error(){
+static void 
+rb_aio_read_multi_error(){
     switch(errno){
        case EAGAIN: 
 	        rb_aio_error( "Resources necessary to queue all the requests are not available at the moment." );
@@ -348,7 +351,8 @@ static void rb_aio_read_multi_error(){
 /*
  *  Initiates lio_listio
  */
-static VALUE rb_aio_lio_listio( VALUE *cbs ){
+static VALUE 
+rb_aio_lio_listio( VALUE *cbs ){
 	int op, ret;
 	aiocb_t *list[AIO_MAX_LIST];
 	int reads = RARRAY_LEN(cbs);
@@ -372,7 +376,8 @@ static VALUE rb_aio_lio_listio( VALUE *cbs ){
 /*
  *  Helper to ensure files opened via AIO.lio_listio is closed.
  */
-static void rb_io_closes( VALUE cbs ){
+static void 
+rb_io_closes( VALUE cbs ){
     int io;
     for (io=0; io < RARRAY_LEN(cbs); io++) {
 	  control_block_close( RARRAY_PTR(cbs)[io] );
@@ -414,7 +419,8 @@ rb_aio_s_read( VALUE aio, VALUE cb ){
  *  close_nocancel(0x4)	 = 0 0
  *  close_nocancel(0x3)	 = 0 0
  */
-static VALUE rb_aio_s_lio_listio( VALUE aio, VALUE cbs ){
+static VALUE 
+rb_aio_s_lio_listio( VALUE aio, VALUE cbs ){
 	int reads = RARRAY_LEN(cbs);
 	if (reads > AIO_MAX_LIST) rb_aio_error( "maximum number of AIO calls exceeded!" );
 	return rb_ensure( rb_aio_lio_listio, (VALUE)cbs, rb_io_closes, cbs );
