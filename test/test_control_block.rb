@@ -5,11 +5,14 @@ class TestControlBlock < Test::Unit::TestCase
   def setup
     @cb = AIO::CB.new
   end
-  
+
   def test_open
     @cb.open( fixtures( '1.txt' ).first ) 
     assert_equal 3, @cb.fildes
     assert_equal 3, @cb.nbytes
+    assert_nothing_raised do
+      @cb.validate!
+    end
   end  
   
   def test_init_with_block
@@ -26,11 +29,11 @@ class TestControlBlock < Test::Unit::TestCase
       @cb.fildes = '12'
     end
   end
-  
+
   def test_buffer
     assert_equal nil, @cb.buf
   end  
-  
+
   def test_nbytes
     assert_equal 0, @cb.nbytes
     assert_equal 4096, @cb.nbytes = 4096
@@ -94,5 +97,5 @@ class TestControlBlock < Test::Unit::TestCase
         @cb.reset!        
       end  
     end
-
+    
 end

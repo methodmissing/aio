@@ -48,6 +48,11 @@ VALUE rb_cCB;
 
 typedef struct aiocb aiocb_t;
 
+typedef struct{
+	aiocb_t cb;
+	VALUE io; 
+} rb_aiocb_t;
+
 /* Allows for passing n-1 arguments to the first rb_ensure function call */
 struct aio_read_multi_args {
 	aiocb_t **list;
@@ -58,16 +63,29 @@ static void rb_aio_error( char * msg ){
     rb_raise( eAio, msg );
 }
 
-#define GetCBStruct(obj)	(Check_Type(obj, T_DATA), (aiocb_t*)DATA_PTR(obj))
+#define GetCBStruct(obj)	(Check_Type(obj, T_DATA), (rb_aiocb_t*)DATA_PTR(obj))
 
-static void mark_control_block(aiocb_t* cb)
+static void mark_control_block(rb_aiocb_t *cb)
 {
-	rb_gc_mark(cb->aio_buf);
+	rb_gc_mark(cb->cb.aio_buf);
+	rb_gc_mark(cb->io);
 }
 
-static void free_control_block(aiocb_t* cb)
+static void free_control_block(rb_aiocb_t* cb)
 {
     xfree(cb);
+}
+
+static VALUE
+control_block_nbytes_set(VALUE cb, VALUE bytes)
+{
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	Check_Type(bytes, T_FIXNUM);
+	cbs->cb.aio_nbytes = FIX2INT(bytes);
+	if (cbs->cb.aio_buf != NULL) xfree( cbs->cb.aio_buf);
+	cbs->cb.aio_buf = malloc(cbs->cb.aio_nbytes + 1);
+	if (!cbs->cb.aio_buf) rb_aio_error( "not able to allocate a read buffer" );	
+	return bytes;
 }
 
 static VALUE
@@ -78,7 +96,7 @@ control_block_open(VALUE cb, VALUE file)
 #else	
 	OpenFile *fptr;
 #endif
-    aiocb_t *cbs = GetCBStruct(cb);
+    rb_aiocb_t *cbs = GetCBStruct(cb);
 	VALUE io;
 
     struct stat stats;
@@ -89,38 +107,40 @@ control_block_open(VALUE cb, VALUE file)
     GetOpenFile(io, fptr);
     rb_io_check_readable(fptr); 	
 
-    if ( cbs->aio_fildes == 0 && cbs->aio_nbytes == 0){
+    if ( cbs->cb.aio_fildes == 0 && cbs->cb.aio_nbytes == 0){
 #ifdef HAVE_TBR
-      cbs->aio_fildes = fptr->fd;
+      cbs->cb.aio_fildes = fptr->fd;
 #else	
-      cbs->aio_fildes = fileno(fptr->f);
+      cbs->cb.aio_fildes = fileno(fptr->f);
 #endif
-      fstat(cbs->aio_fildes, &stats);
-      cbs->aio_nbytes = stats.st_size;
+      fstat(cbs->cb.aio_fildes, &stats);
+	  control_block_nbytes_set(cb, INT2FIX(stats.st_size));
     }
 	return io;    
 }
 
 static void
-control_block_reset0(aiocb_t *cb)
+control_block_reset0(rb_aiocb_t *cb)
 {
-    bzero(cb, sizeof(aiocb_t));
-    cb->aio_fildes = 0; 
-    cb->aio_buf = NULL; 
-    cb->aio_nbytes = 0;
-    cb->aio_offset = 0;
-    cb->aio_reqprio = 0;
-    cb->aio_lio_opcode = LIO_READ;
-    /* Disable signals for the time being */
-    cb->aio_sigevent.sigev_notify = SIGEV_NONE;
-    cb->aio_sigevent.sigev_signo = 0;
-    cb->aio_sigevent.sigev_value.sival_int = 0;
+    bzero(cb, sizeof(rb_aiocb_t));
+    /* TODO: Property cleanup this IO instance */
+    cb->io = Qnil;
+    cb->cb.aio_fildes = 0; 
+    cb->cb.aio_buf = NULL; 
+    cb->cb.aio_nbytes = 0;
+    cb->cb.aio_offset = 0;
+    cb->cb.aio_reqprio = 0;
+    cb->cb.aio_lio_opcode = LIO_READ;
+   /* Disable signals for the time being */
+    cb->cb.aio_sigevent.sigev_notify = SIGEV_NONE;
+    cb->cb.aio_sigevent.sigev_signo = 0;
+    cb->cb.aio_sigevent.sigev_value.sival_int = 0;
 }
 
 static VALUE
 control_block_reset(VALUE cb)
 {
-	aiocb_t *cbs = GetCBStruct(cb);
+	rb_aiocb_t *cbs = GetCBStruct(cb);
 	control_block_reset0(cbs);
 	return cb;
 }
@@ -130,8 +150,8 @@ static VALUE
 control_block_alloc(VALUE klass)
 {
 	VALUE obj;
-	aiocb_t *cb;
-	obj = Data_Make_Struct(klass, aiocb_t, mark_control_block, free_control_block, cb);
+	rb_aiocb_t *cb;
+	obj = Data_Make_Struct(klass, rb_aiocb_t, mark_control_block, free_control_block, cb);
 	control_block_reset0(cb);	
     return obj;
 }
@@ -139,7 +159,6 @@ control_block_alloc(VALUE klass)
 static VALUE
 control_block_initialize(int argc, VALUE *argv, VALUE cb)
 {
-	aiocb_t *cbs = GetCBStruct(cb);
 	if (rb_block_given_p()){
 		rb_obj_instance_eval( 0, 0, cb );
 	}
@@ -149,104 +168,92 @@ control_block_initialize(int argc, VALUE *argv, VALUE cb)
 static VALUE
 control_block_fildes_get(VALUE cb)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
-	return INT2FIX(cbs->aio_fildes);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->cb.aio_fildes);
 }
 
 static VALUE
 control_block_fildes_set(VALUE cb, VALUE fd)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(fd, T_FIXNUM);
-	cbs->aio_fildes = FIX2INT(fd);
+	cbs->cb.aio_fildes = FIX2INT(fd);
 	return fd;
 }
 
 static VALUE
 control_block_buf_get(VALUE cb)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
-	return cbs->aio_buf == NULL ? Qnil : rb_str_new(&cbs->aio_buf, cbs->aio_nbytes);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	return cbs->cb.aio_buf == NULL ? Qnil : rb_str_new(&cbs->cb.aio_buf, cbs->cb.aio_nbytes);
 }
 
 static VALUE
 control_block_nbytes_get(VALUE cb)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
-	return INT2FIX(cbs->aio_nbytes);
-}
-
-static VALUE
-control_block_nbytes_set(VALUE cb, VALUE bytes)
-{
- 	aiocb_t *cbs = GetCBStruct(cb);
-	Check_Type(bytes, T_FIXNUM);
-	cbs->aio_nbytes = FIX2INT(bytes);
-	if (cbs->aio_buf != NULL) xfree( cbs->aio_buf);
-	cbs->aio_buf = malloc(cbs->aio_nbytes + 1);
-	if (!cbs->aio_buf) rb_aio_error( "not able to allocate a read buffer" );	
-	return bytes;
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->cb.aio_nbytes);
 }
 
 static VALUE
 control_block_offset_get(VALUE cb)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
-	return INT2FIX(cbs->aio_offset);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->cb.aio_offset);
 }
 
 static VALUE
 control_block_offset_set(VALUE cb, VALUE offset)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(offset, T_FIXNUM);
-	cbs->aio_offset = FIX2INT(offset);
+	cbs->cb.aio_offset = FIX2INT(offset);
 	return offset;
 }
 
 static VALUE
 control_block_reqprio_get(VALUE cb)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
-	return INT2FIX(cbs->aio_reqprio);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->cb.aio_reqprio);
 }
 
 static VALUE
 control_block_reqprio_set(VALUE cb, VALUE reqprio)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(reqprio, T_FIXNUM);
-	cbs->aio_reqprio = FIX2INT(reqprio);
+	cbs->cb.aio_reqprio = FIX2INT(reqprio);
 	return reqprio;
 }
 
 static VALUE
 control_block_lio_opcode_get(VALUE cb)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
-	return INT2FIX(cbs->aio_lio_opcode);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	return INT2FIX(cbs->cb.aio_lio_opcode);
 }
 
 static VALUE
 control_block_lio_opcode_set(VALUE cb, VALUE opcode)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(opcode, T_FIXNUM);
 	if ( NUM2INT(opcode) != LIO_READ && NUM2INT(opcode) != LIO_WRITE )
 		rb_aio_error("Only AIO::READ and AIO::WRITE modes supported");
-	cbs->aio_lio_opcode = NUM2INT(opcode);
+	cbs->cb.aio_lio_opcode = NUM2INT(opcode);
 	return opcode;
 }
 
 static VALUE
 control_block_validate(VALUE cb)
 {
- 	aiocb_t *cbs = GetCBStruct(cb);
-	if (cbs->aio_fildes <= 0) rb_aio_error( "Invalid file descriptor" );    
-	if (cbs->aio_nbytes <= 0) rb_aio_error( "Invalid buffer length" );    
-	if (cbs->aio_offset < 0) rb_aio_error( "Invalid file offset" );    
-	if (cbs->aio_reqprio < 0) rb_aio_error( "Invalid request priority" );
-	if (!cbs->aio_buf) rb_aio_error( "No buffer allocated" );	
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	if (cbs->cb.aio_fildes <= 0) rb_aio_error( "Invalid file descriptor" );    
+	if (cbs->cb.aio_nbytes <= 0) rb_aio_error( "Invalid buffer length" );    
+	if (cbs->cb.aio_offset < 0) rb_aio_error( "Invalid file offset" );    
+	if (cbs->cb.aio_reqprio < 0) rb_aio_error( "Invalid request priority" );
+	if (!cbs->cb.aio_buf) rb_aio_error( "No buffer allocated" );	
 	return cb;    
 }
 
@@ -322,7 +329,7 @@ static VALUE rb_aio_read_multi( struct aio_read_multi_args *args ){
 /*
  *  Helper to ensure files opened via AIO.read_multi is closed.
  */
-static VALUE rb_io_closes( VALUE ios ){
+static void rb_io_closes( VALUE ios ){
     int io;
 
     for (io=0; io < RARRAY_LEN(ios); io++) {
@@ -362,7 +369,6 @@ static VALUE rb_aio_open_file( VALUE *file, int *fd, int *length ){
     VALUE io;
 
     struct stat stats;
-	aiocb_t cb;
    
     Check_Type(*file, T_STRING);	
 
