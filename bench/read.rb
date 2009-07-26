@@ -1,11 +1,12 @@
 require File.dirname(__FILE__) + '/../ext/aio/aio'
 require "benchmark"
 
-INPUT = (1..8).to_a.map{|f| File.dirname(__FILE__) + "/../test/fixtures/#{f}.txt" }
+CALLBACKS = (1..8).to_a.map{|f| AIO::CB.new( File.dirname(__FILE__) + "/../test/fixtures/#{f}.txt" ) }
+PATHS = CALLBACKS.map{|cb| cb.path }
 
 Benchmark.bm do |results|
-  results.report("AIO.aio_read") { AIO.read_multi( *INPUT ) }  
-  results.report("IO.read") { INPUT.map{|f| IO.read(f) } }  
+  results.report("AIO.lio_listio") { AIO.lio_listio( *CALLBACKS ) }  
+  results.report("IO.read") { PATHS.each{|p| IO.read(p) } }  
 end
 
 =begin

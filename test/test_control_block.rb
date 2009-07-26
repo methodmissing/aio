@@ -15,6 +15,12 @@ class TestControlBlock < Test::Unit::TestCase
     end
   end  
 
+  def test_path
+    assert_equal '', @cb.path
+    @cb.open( fixtures( '1.txt' ).first )
+    assert_match /test\/fixtures\/1\.txt/, @cb.path    
+  end
+
   def test_open?
     assert !@cb.open?
     @cb.open( fixtures( '2.txt' ).first )

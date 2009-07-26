@@ -159,6 +159,29 @@ control_block_initialize(int argc, VALUE *argv, VALUE cb)
 	return cb;
 }
 
+static VALUE 
+control_block_path(VALUE cb)
+{ 
+	rb_aiocb_t *cbs = GetCBStruct(cb);
+#ifdef HAVE_TBR
+	rb_io_t *fptr;
+#else	
+	OpenFile *fptr;
+#endif
+    if NIL_P(cbs->io){
+		return rb_str_new2("");
+    }else{	
+	   	GetOpenFile(cbs->io, fptr);
+	    rb_io_check_readable(fptr);
+#ifdef HAVE_TBR
+		return rb_file_s_expand_path( 1, &fptr->pathv );
+#else
+		VALUE path = rb_str_new2(fptr->path);
+		return rb_file_s_expand_path( 1, &path );
+#endif
+	}
+}
+
 static VALUE
 control_block_fildes_get(VALUE cb)
 {
@@ -420,6 +443,7 @@ void Init_aio()
     rb_define_method(rb_cCB, "open", control_block_open, 1);
     rb_define_method(rb_cCB, "open?", control_block_open_p, 0);
     rb_define_method(rb_cCB, "close!", control_block_close, 0);
+    rb_define_method(rb_cCB, "path", control_block_path, 0);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
