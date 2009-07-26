@@ -21,6 +21,14 @@ class TestControlBlock < Test::Unit::TestCase
     assert @cb.open?    
   end
   
+  def test_close!
+    assert_equal false, @cb.close!
+    @cb.open( fixtures( '2.txt' ).first )
+    assert @cb.open?    
+    assert_equal true, @cb.close!    
+    assert !@cb.open?
+  end
+  
   def test_init_with_block
     cb = AIO::CB.new do 
       self.fildes = 12

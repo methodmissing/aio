@@ -263,6 +263,19 @@ control_block_open_p(VALUE cb)
 	return NIL_P(cbs->io) ? Qfalse : Qtrue;
 }
 
+static VALUE
+control_block_close(VALUE cb)
+{
+ 	rb_aiocb_t *cbs = GetCBStruct(cb);
+	if NIL_P(cbs->io){
+		return Qfalse;
+    }else{
+		rb_io_close(cbs->io);
+		cbs->io = Qnil; 
+		return Qtrue;
+	} 	
+}
+
 /*
  *  Error handling for aio_read
  */
@@ -477,6 +490,7 @@ void Init_aio()
     rb_define_method(rb_cCB, "reset!", control_block_reset, 0);
     rb_define_method(rb_cCB, "open", control_block_open, 1);
     rb_define_method(rb_cCB, "open?", control_block_open_p, 0);
+    rb_define_method(rb_cCB, "close!", control_block_close, 0);
 
     rb_define_const(mAio, "WAIT", INT2NUM(LIO_WAIT));
     rb_define_const(mAio, "NOWAIT", INT2NUM(LIO_NOWAIT));
