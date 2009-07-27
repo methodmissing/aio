@@ -76,7 +76,7 @@ control_block_nbytes_set(VALUE cb, VALUE bytes)
  	rb_aiocb_t *cbs = GetCBStruct(cb);
 	Check_Type(bytes, T_FIXNUM);
 	cbs->cb.aio_nbytes = FIX2INT(bytes);
-	if (cbs->cb.aio_buf != NULL) xfree( cbs->cb.aio_buf);
+	if (cbs->cb.aio_buf != NULL) xfree((char *)cbs->cb.aio_buf);
 	cbs->cb.aio_buf = malloc(cbs->cb.aio_nbytes + 1);
 	if (!cbs->cb.aio_buf) rb_aio_error( "not able to allocate a read buffer" );	
 	return bytes;
@@ -209,7 +209,7 @@ static VALUE
 control_block_buf_get(VALUE cb)
 {
  	rb_aiocb_t *cbs = GetCBStruct(cb);
-	return cbs->cb.aio_buf == NULL ? Qnil : rb_str_new2(cbs->cb.aio_buf);
+	return cbs->cb.aio_buf == NULL ? Qnil : rb_str_new2((char *)cbs->cb.aio_buf);
 }
 
 static VALUE
@@ -398,7 +398,7 @@ rb_aio_lio_listio_blocking( VALUE *cbs )
 {
 	aiocb_t *list[AIO_MAX_LIST];
 	int op;
-	int ops = rb_aio_lio_listio( LIO_WAIT, cbs, &list );
+	int ops = rb_aio_lio_listio( LIO_WAIT, cbs, list );
     VALUE results = rb_ary_new2( ops );
     for (op=0; op < ops; op++) {
         rb_ary_push( results, rb_tainted_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
@@ -413,7 +413,7 @@ static VALUE
 rb_aio_lio_listio_non_blocking( VALUE *cbs )
 {
 	aiocb_t *list[AIO_MAX_LIST];
-	rb_aio_lio_listio( LIO_NOWAIT, cbs, &list );
+	rb_aio_lio_listio( LIO_NOWAIT, cbs, list );
 	return Qnil;
 }
 
@@ -477,9 +477,9 @@ rb_aio_s_lio_listio( VALUE aio, VALUE cbs )
 	int ops = RARRAY_LEN(cbs);
 	if (ops > AIO_MAX_LIST) rb_aio_error( "maximum number of AIO calls exceeded!" );
 	if (mode == INT2NUM(LIO_WAIT)){
-	    return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, cbs );
+	    return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
 	}else{
-		return rb_ensure( rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, cbs );
+		return rb_ensure( rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
 	}	
 }
 
@@ -517,7 +517,8 @@ rb_aio_cancel( int fd, void *cb )
        case AIO_ALLDONE: 
             return INT2NUM(AIO_ALLDONE);
 			break;
-	}			
+	}
+	return Qnil;			
 }
 
 static VALUE 
@@ -554,7 +555,7 @@ rb_aio_return_error()
 }
 
 static VALUE 
-rb_aio_return( rb_aiocb_t *cb )
+rb_aio_return( aiocb_t *cb )
 {	
 	int ret;
 	TRAP_BEG;
@@ -588,7 +589,7 @@ rb_aio_err_error()
 }
 
 static VALUE 
-rb_aio_err( rb_aiocb_t *cb )
+rb_aio_err( aiocb_t *cb )
 {	
 	int ret;
 	TRAP_BEG;
