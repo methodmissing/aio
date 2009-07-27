@@ -55,7 +55,17 @@ class TestAio < Test::Unit::TestCase
   def test_return
     cb = AIO::CB.new(fixtures( '1.txt' ).first)
     AIO.read( cb )
-    assert_equal -1, AIO.return(cb)
+    assert_aio_error do
+      AIO.return(cb)
+    end  
+  end
+  
+  def test_error
+    cb = AIO::CB.new(fixtures( '1.txt' ).first)
+    AIO.read( cb )
+    assert_aio_error do
+      AIO.error(cb)
+    end
   end
   
 end

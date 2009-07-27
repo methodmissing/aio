@@ -308,14 +308,20 @@ rb_aio_read_error()
 {
     switch(errno){
        case EAGAIN: 
-	        rb_aio_error( "The request cannot be queued due to exceeding resource (queue) limitations." );
+	        rb_aio_error( "[EAGAIN] The request cannot be queued due to exceeding resource (queue) limitations." );
 		  break;
        case EBADF: 
-	        rb_aio_error( "File descriptor is not valid for reading." );
+	        rb_aio_error( "[EBADF] File descriptor is not valid for reading." );
 			break;
+	   case ENOSYS: 
+	        rb_aio_error( "[ENOSYS] aio_read not supported by this implementation." );
+			break;			
        case EINVAL: 
-            rb_aio_error( "Read offset is invalid" );
+            rb_aio_error( "[EINVAL] Read offset is invalid" );
 			break;
+	   case EOVERFLOW: 
+	        rb_aio_error( "[EOVERFLOW] Control block offset exceeded." );
+	   	    break;			
 	}
 }
 
@@ -347,14 +353,20 @@ rb_aio_read_multi_error()
 {
     switch(errno){
        case EAGAIN: 
-	        rb_aio_error( "Resources necessary to queue all the requests are not available at the moment." );
+	        rb_aio_error( "[EAGAIN] Resources necessary to queue all the requests are not available at the moment." );
 		    break;
        case EIO: 
-	        rb_aio_error( "One or more requests failed" );
+	        rb_aio_error( "[EIO] One or more requests failed" );
 			break;
+	   case ENOSYS: 
+		    rb_aio_error( "[ENOSYS] lio_listio not supported by this implementation." );
+			break;			
        case EINVAL: 
-            rb_aio_error( "Maximum number of allowed simultaneous requests exceeded." );
+            rb_aio_error( "[EINVAL] Maximum number of allowed simultaneous requests exceeded." );
 			break;
+	   case EINTR: 
+	        rb_aio_error( "[EINTR] A signal was delivered while waiting for all I/O requests to complete during a LIO_WAIT operation." );
+		    break;			
 	}
 }
 
@@ -479,13 +491,10 @@ rb_aio_cancel_error()
 {
     switch(errno){
        case EBADF: 
-	        rb_aio_error( "Invalid file descriptor." );
+	        rb_aio_error( "[EBADF] Invalid file descriptor." );
 		    break;
-       case EINVAL: 
-	        rb_aio_error( "No asynchronous I/O has ever been requested for the file descriptor." );
-			break;
-       case ENOMEM: 
-            rb_aio_error( "There were no Kernel control blocks available to service this request." );
+       case ENOSYS: 
+	        rb_aio_error( "[ENOSYS] aio_cancel is not supported by this implementation." );
 			break;
 	}
 }
@@ -533,10 +542,14 @@ rb_aio_return_error()
 {
     switch(errno){
        case ENOMEM: 
-            rb_aio_error( "There were no Kernel control blocks available to service this request." );
+            rb_aio_error( "[ENOMEM] There were no Kernel control blocks available to service this request." );
 			break;
-	   default:
-	        break;	
+       case EINVAL: 
+            rb_aio_error( "[EINVAL] The control block does not refer to an asynchronous operation whose return status has not yet been retrieved." );
+			break;
+       case ENOSYS: 
+            rb_aio_error( "[ENOSYS] aio_return not supported by this implementation." );
+			break;							
 	}
 }
 
@@ -556,6 +569,40 @@ rb_aio_s_return( VALUE aio, VALUE cb )
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);	
     return rb_aio_return( &cbs->cb );	
+}
+
+/*
+ *  Error handling for aio_error
+ */
+static void 
+rb_aio_err_error()
+{
+    switch(errno){
+       case EINVAL: 
+            rb_aio_error( "[EINVAL] The control block does not refer to an asynchronous operation whose return status has not yet been retrieved." );
+			break;
+       case ENOSYS: 
+            rb_aio_error( "[ENOSYS] aio_error not supported by this implementation." );
+			break;							
+	}
+}
+
+static VALUE 
+rb_aio_err( rb_aiocb_t *cb )
+{	
+	int ret;
+	TRAP_BEG;
+    ret = aio_error( cb );
+	TRAP_END;			
+    if (ret != 0) rb_aio_err_error();
+	return INT2FIX(ret);
+}
+
+static VALUE 
+rb_aio_s_error( VALUE aio, VALUE cb )
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);	
+    return rb_aio_err( &cbs->cb );	
 }
 
 void Init_aio()
@@ -599,5 +646,5 @@ void Init_aio()
     rb_define_module_function( mAio, "read", rb_aio_s_read, 1 );
     rb_define_module_function( mAio, "cancel", rb_aio_s_cancel, -1 );
     rb_define_module_function( mAio, "return", rb_aio_s_return, 1 );
-
+    rb_define_module_function( mAio, "error", rb_aio_s_error, 1 );
 }
