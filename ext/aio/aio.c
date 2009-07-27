@@ -606,6 +606,49 @@ rb_aio_s_error( VALUE aio, VALUE cb )
     return rb_aio_err( &cbs->cb );	
 }
 
+/*
+ *  Error handling for aio_error
+ */
+static void 
+rb_aio_sync_error()
+{
+    switch(errno){
+       case EINVAL: 
+            rb_aio_error( "[EINVAL] A value of op other than AIO::DSYNC or AIO::SYNC was specified." );
+			break;
+	   case EAGAIN: 
+	        rb_aio_error( "[EAGAIN] The requested asynchronous operation was not queued due to temporary resource limitations." );
+	   	    break;			
+       case ENOSYS: 
+            rb_aio_error( "[ENOSYS] aio_error not supported by this implementation." );
+			break;
+	   case EBADF: 
+	        rb_aio_error( "[EBADF] Invalid file descriptor." );
+	        break;										
+	}
+}
+
+static VALUE 
+rb_aio_sync( int op, aiocb_t *cb )
+{	
+	int ret;
+	TRAP_BEG;
+    ret = aio_fsync( op, cb );
+	TRAP_END;			
+    if (ret != 0) rb_aio_sync_error();
+	return INT2FIX(ret);
+}
+
+static VALUE 
+rb_aio_s_sync( VALUE aio, VALUE op, VALUE cb )
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);	
+	Check_Type( op, T_FIXNUM );
+	/* XXX handle AIO::DSYNC gracefully as well */
+	if (NUM2INT(op) != O_SYNC) rb_aio_error("Operation AIO::SYNC expected");
+    return rb_aio_sync( NUM2INT(op), &cbs->cb );	
+}
+
 void Init_aio()
 {	
     mAio = rb_define_module("AIO");
@@ -631,6 +674,10 @@ void Init_aio()
     rb_define_method(rb_cCB, "close!", control_block_close, 0);
     rb_define_method(rb_cCB, "path", control_block_path, 0);
 
+    rb_define_const(mAio, "SYNC", INT2NUM(O_SYNC));
+    /*
+    XXX O_DSYNC not supported by Darwin
+    rb_define_const(mAio, "DSYNC", INT2NUM(O_DSYNC));*/
     rb_define_const(mAio, "INPROGRESS", INT2NUM(EINPROGRESS));
     rb_define_const(mAio, "ALLDONE", INT2NUM(AIO_ALLDONE));
     rb_define_const(mAio, "CANCELED", INT2NUM(AIO_CANCELED));
@@ -648,4 +695,5 @@ void Init_aio()
     rb_define_module_function( mAio, "cancel", rb_aio_s_cancel, -1 );
     rb_define_module_function( mAio, "return", rb_aio_s_return, 1 );
     rb_define_module_function( mAio, "error", rb_aio_s_error, 1 );
+    rb_define_module_function( mAio, "sync", rb_aio_s_sync, 2 );
 }

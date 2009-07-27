@@ -68,4 +68,10 @@ class TestAio < Test::Unit::TestCase
     end
   end
   
+  def test_sync 
+    cb = AIO::CB.new(fixtures( '1.txt' ).first)
+    AIO.read( cb )
+    assert_equal nil, AIO.sync( AIO::SYNC, cb)    
+  end
+  
 end
