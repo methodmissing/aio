@@ -55,7 +55,7 @@ typedef struct{
 
 static ID s_to_str, s_to_s, s_buf;
 static ID s_inprogress, s_alldone, s_canceled, s_notcanceled;
-static ID s_sync, s_wait, s_nowait, s_nop, s_read, s_write;
+static ID s_sync, s_wait, s_nowait, s_nop, s_read, s_write, s_queue;
 
 static void rb_aio_error( char * msg ){
     rb_raise( eAio, msg );
@@ -490,7 +490,7 @@ rb_aio_s_lio_listio( VALUE aio, VALUE cbs )
 	    mode = rb_const_get(mAio, s_wait);
 	}
 	int ops = RARRAY_LEN(cbs);
-	if (ops > AIO_MAX_LIST) rb_aio_error( "maximum number of AIO calls exceeded!" );
+	if (ops > AIO_MAX_LIST) return rb_const_get(mAio, s_queue);
 	switch(NUM2INT(mode)){
 	    case LIO_WAIT:
 	         return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );   
@@ -677,6 +677,7 @@ void Init_aio()
 	s_to_str = rb_intern("to_str");
 	s_to_s = rb_intern("to_s");
 
+	s_queue = rb_intern("QUEUE");
 	s_sync = rb_intern("SYNC");
 	s_inprogress = rb_intern("INPROGRESS");
 	s_alldone = rb_intern("ALLDONE");
@@ -718,6 +719,7 @@ void Init_aio()
     /*
     XXX O_DSYNC not supported by Darwin
     rb_define_const(mAio, "DSYNC", INT2NUM(O_DSYNC));*/
+    rb_define_const(mAio, "QUEUE", INT2NUM(100));
     rb_define_const(mAio, "INPROGRESS", INT2NUM(EINPROGRESS));
     rb_define_const(mAio, "ALLDONE", INT2NUM(AIO_ALLDONE));
     rb_define_const(mAio, "CANCELED", INT2NUM(AIO_CANCELED));

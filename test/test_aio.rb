@@ -29,10 +29,8 @@ class TestAio < Test::Unit::TestCase
     assert_equal ["\x03", "", "", ""], cbs.map{|cb| cb.buf }   
   end
 
-  def test_read_multi_limits
-    assert_aio_error do
-      AIO.lio_listio( *fixtures( *([AIO::CB.new] * 17)) )
-    end  
+  def test_listio_exceed_limits
+    assert_equal AIO::QUEUE,  AIO.lio_listio( *fixtures( *([AIO::CB.new] * 17)) )  
   end 
 
   def test_read
