@@ -62,7 +62,9 @@ class TestControlBlock < Test::Unit::TestCase
   end
 
   def test_buffer
-    assert_equal nil, @cb.buf
+    assert_equal '', @cb.buf
+    assert_equal '', @cb.to_str
+    assert_equal '', @cb.to_s    
   end  
 
   def test_nbytes

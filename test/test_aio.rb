@@ -2,23 +2,31 @@ require File.dirname(__FILE__) + '/helper'
 
 class TestAio < Test::Unit::TestCase
 
-  def test_read_multi
+  def test_listio_read
     cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| AIO::CB.new(f) }
     cbs.each{|cb| assert cb.open? }
     assert_equal %w(one two three four), AIO.lio_listio( *cbs )
     cbs.each{|cb| assert !cb.open? }
   end
 
-  def test_read_multi_blocking
+  def test_listio_read_blocking
     cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| AIO::CB.new(f) }
     assert_equal %w(one two three four), AIO.lio_listio( *([AIO::WAIT].concat(cbs)) )        
   end
 
-  def test_read_multi_non_blocking
+  def test_listio_read_non_blocking
     cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| AIO::CB.new(f) }
     assert_equal nil, AIO.lio_listio( *([AIO::NOWAIT].concat(cbs)) )     
     sleep(1)
     assert_equal %w(one two three four), cbs.map{|cb| cb.buf }   
+  end
+
+  def test_listio_read_noop
+    cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| AIO::CB.new(f) }
+    assert_equal nil, AIO.lio_listio( *([AIO::NOP].concat(cbs)) )     
+    sleep(1)
+    # TODO where's the ETS char coming from ?
+    assert_equal ["\x03", "", "", ""], cbs.map{|cb| cb.buf }   
   end
 
   def test_read_multi_limits

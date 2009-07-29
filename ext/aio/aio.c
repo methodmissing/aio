@@ -53,6 +53,10 @@ typedef struct{
 	VALUE io; 
 } rb_aiocb_t;
 
+static ID s_to_str, s_to_s, s_buf;
+static ID s_inprogress, s_alldone, s_canceled, s_notcanceled;
+static ID s_sync, s_wait, s_nowait, s_nop, s_read, s_write;
+
 static void rb_aio_error( char * msg ){
     rb_raise( eAio, msg );
 }
@@ -209,7 +213,7 @@ static VALUE
 control_block_buf_get(VALUE cb)
 {
  	rb_aiocb_t *cbs = GetCBStruct(cb);
-	return cbs->cb.aio_buf == NULL ? Qnil : rb_str_new2((char *)cbs->cb.aio_buf);
+	return cbs->cb.aio_buf == NULL ? rb_str_new2("") : rb_str_new2((char *)cbs->cb.aio_buf);
 }
 
 static VALUE
@@ -407,6 +411,17 @@ rb_aio_lio_listio_blocking( VALUE *cbs )
 }	
 
 /*
+ *  No-op lio_listio
+ */
+static VALUE
+rb_aio_lio_listio_noop( VALUE *cbs )
+{
+	aiocb_t *list[AIO_MAX_LIST];
+	rb_aio_lio_listio( LIO_NOP, cbs, list );
+	return Qnil;
+}
+
+/*
  *  Non-blocking lio_listio
  */
 static VALUE
@@ -469,18 +484,25 @@ rb_aio_s_lio_listio( VALUE aio, VALUE cbs )
 {
 	VALUE mode_arg, mode;
 	mode_arg = RARRAY_PTR(cbs)[0];
-	if (mode_arg == INT2NUM(LIO_WAIT) || mode_arg == INT2NUM(LIO_NOWAIT)){
+	if (mode_arg == rb_const_get(mAio, s_wait) || mode_arg == rb_const_get(mAio, s_nowait) || mode_arg == rb_const_get(mAio, s_nop)){
 		mode = rb_ary_shift(cbs);
 	}else{
-	    mode = INT2NUM(LIO_WAIT);
+	    mode = rb_const_get(mAio, s_wait);
 	}
 	int ops = RARRAY_LEN(cbs);
 	if (ops > AIO_MAX_LIST) rb_aio_error( "maximum number of AIO calls exceeded!" );
-	if (mode == INT2NUM(LIO_WAIT)){
-	    return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
-	}else{
-		return rb_ensure( rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
-	}	
+	switch(NUM2INT(mode)){
+	    case LIO_WAIT:
+	         return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );   
+			 break;
+	    case LIO_NOWAIT:
+	         return rb_ensure( rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
+			 break;
+	    case LIO_NOP:
+	         return rb_ensure( rb_aio_lio_listio_noop, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
+			 break;
+	}
+	rb_aio_error("Only modes AIO::WAIT, AIO::NOWAIT and AIO::NOP supported");
 }
 
 /*
@@ -509,13 +531,13 @@ rb_aio_cancel( int fd, void *cb )
 	if (ret != 0) rb_aio_cancel_error();
     switch(ret){
        case AIO_CANCELED: 
-	        return INT2NUM(AIO_CANCELED);
+	        return rb_const_get(mAio, s_canceled);
 		    break;
        case AIO_NOTCANCELED: 
-	        return INT2NUM(AIO_NOTCANCELED);
+	        return rb_const_get(mAio, s_notcanceled);
 			break;
        case AIO_ALLDONE: 
-            return INT2NUM(AIO_ALLDONE);
+            return rb_const_get(mAio, s_alldone);
 			break;
 	}
 	return Qnil;			
@@ -526,7 +548,7 @@ rb_aio_s_cancel(int argc, VALUE *argv, VALUE aio)
 {
 	VALUE fd, cb;
     rb_scan_args(argc, argv, "02", &fd, &cb);
-	if (NIL_P(fd) || TYPE(fd) != T_FIXNUM) rb_aio_error("No file descriptor given");
+	if (NIL_P(fd) || !FIXNUM_P(fd)) rb_aio_error("No file descriptor given");
     if (NIL_P(cb)){
 	   return rb_aio_cancel( NUM2INT(fd), NULL );
     }else{
@@ -645,12 +667,27 @@ rb_aio_s_sync( VALUE aio, VALUE op, VALUE cb )
     rb_aiocb_t *cbs = GetCBStruct(cb);	
 	Check_Type( op, T_FIXNUM );
 	/* XXX handle AIO::DSYNC gracefully as well */
-	if (NUM2INT(op) != O_SYNC) rb_aio_error("Operation AIO::SYNC expected");
+	if (op != rb_const_get(mAio, s_sync)) rb_aio_error("Operation AIO::SYNC expected");
     return rb_aio_sync( NUM2INT(op), &cbs->cb );	
 }
 
 void Init_aio()
 {	
+	s_buf = rb_intern("buf");
+	s_to_str = rb_intern("to_str");
+	s_to_s = rb_intern("to_s");
+
+	s_sync = rb_intern("SYNC");
+	s_inprogress = rb_intern("INPROGRESS");
+	s_alldone = rb_intern("ALLDONE");
+	s_canceled = rb_intern("CANCELED");
+	s_notcanceled = rb_intern("NOTCANCELED");
+	s_nowait = rb_intern("NOWAIT");
+	s_wait = rb_intern("WAIT");
+	s_nop = rb_intern("NOP");
+	s_read = rb_intern("READ");
+	s_write = rb_intern("WRITE");
+	
     mAio = rb_define_module("AIO");
 
 	rb_cCB  = rb_define_class_under( mAio, "CB", rb_cObject);
@@ -673,7 +710,10 @@ void Init_aio()
     rb_define_method(rb_cCB, "open?", control_block_open_p, 0);
     rb_define_method(rb_cCB, "close!", control_block_close, 0);
     rb_define_method(rb_cCB, "path", control_block_path, 0);
-
+ 
+	rb_alias( rb_cCB, s_to_str, s_buf );
+	rb_alias( rb_cCB, s_to_s, s_buf );
+		
     rb_define_const(mAio, "SYNC", INT2NUM(O_SYNC));
     /*
     XXX O_DSYNC not supported by Darwin
