@@ -51,6 +51,7 @@ typedef struct aiocb aiocb_t;
 typedef struct{
 	aiocb_t cb;
 	VALUE io; 
+	VALUE rcb;
 } rb_aiocb_t;
 
 static ID s_to_str, s_to_s, s_buf;
@@ -67,6 +68,7 @@ static void mark_control_block(rb_aiocb_t *cb)
 {
 	rb_gc_mark(cb->cb.aio_buf);
 	rb_gc_mark(cb->io);
+	rb_gc_mark(cb->rcb);
 }
 
 static void free_control_block(rb_aiocb_t* cb)
@@ -125,6 +127,7 @@ control_block_reset0(rb_aiocb_t *cb)
     bzero(cb, sizeof(rb_aiocb_t));
     /* cleanup with rb_io_close(cb->io) */
     cb->io = Qnil;
+    cb->rcb = Qnil;
     cb->cb.aio_fildes = 0; 
     cb->cb.aio_buf = NULL; 
     cb->cb.aio_nbytes = 0;
@@ -385,6 +388,9 @@ rb_aio_lio_listio( int mode, VALUE *cbs, aiocb_t **list )
     bzero( (char *)list, sizeof(list) );	
     for (op=0; op < ops; op++) {		
 	    rb_aiocb_t *cb = GetCBStruct(RARRAY_PTR(cbs)[op]);
+	    if (rb_block_given_p()){
+	      cb->rcb = rb_block_proc();
+		}
 		list[op] = &cb->cb;       
     }
 	TRAP_BEG;
@@ -454,6 +460,9 @@ static VALUE
 rb_aio_s_read( VALUE aio, VALUE cb )
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
+    if (rb_block_given_p()){
+      cbs->rcb = rb_block_proc();
+	}
     return rb_ensure( rb_aio_read, (VALUE)&cbs->cb, control_block_close, cb );
 }
 
@@ -552,7 +561,10 @@ rb_aio_s_cancel(int argc, VALUE *argv, VALUE aio)
     if (NIL_P(cb)){
 	   return rb_aio_cancel( NUM2INT(fd), NULL );
     }else{
-       rb_aiocb_t *cbs = GetCBStruct(cb);	
+       rb_aiocb_t *cbs = GetCBStruct(cb);
+       if (rb_block_given_p()){
+         cbs->rcb = rb_block_proc();
+	   }	
 	   return rb_aio_cancel( NUM2INT(fd), &cbs->cb );	
 	}
 }
@@ -591,6 +603,9 @@ static VALUE
 rb_aio_s_return( VALUE aio, VALUE cb )
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);	
+    if (rb_block_given_p()){
+      cbs->rcb = rb_block_proc();
+	}
     return rb_aio_return( &cbs->cb );	
 }
 
@@ -625,6 +640,9 @@ static VALUE
 rb_aio_s_error( VALUE aio, VALUE cb )
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);	
+    if (rb_block_given_p()){
+      cbs->rcb = rb_block_proc();
+	}
     return rb_aio_err( &cbs->cb );	
 }
 
@@ -665,6 +683,9 @@ static VALUE
 rb_aio_s_sync( VALUE aio, VALUE op, VALUE cb )
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);	
+	if (rb_block_given_p()){
+      cbs->rcb = rb_block_proc();
+	}
 	Check_Type( op, T_FIXNUM );
 	/* XXX handle AIO::DSYNC gracefully as well */
 	if (op != rb_const_get(mAio, s_sync)) rb_aio_error("Operation AIO::SYNC expected");
