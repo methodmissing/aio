@@ -66,14 +66,16 @@ static void rb_aio_error( char * msg ){
 
 #define GetCBStruct(obj)	(Check_Type(obj, T_DATA), (rb_aiocb_t*)DATA_PTR(obj))
 
-static void mark_control_block(rb_aiocb_t *cb)
+static void 
+mark_control_block(rb_aiocb_t *cb)
 {
 	rb_gc_mark(cb->cb.aio_buf);
 	rb_gc_mark(cb->io);
 	rb_gc_mark(cb->rcb);
 }
 
-static void free_control_block(rb_aiocb_t* cb)
+static void 
+free_control_block(rb_aiocb_t* cb)
 {
     xfree(cb);
 }
@@ -101,7 +103,7 @@ control_block_open(int argc, VALUE *argv, VALUE cb)
 	VALUE file, mode;
     rb_aiocb_t *cbs = GetCBStruct(cb);
 	rb_scan_args(argc, argv, "02", &file, &mode);
-	if NIL_P(mode) mode = rb_str_new2("r");
+	if NIL_P(mode) mode = rb_tainted_str_new2("r");
     struct stat stats;
    
     Check_Type(file, T_STRING);	
@@ -184,14 +186,14 @@ control_block_path(VALUE cb)
 	OpenFile *fptr;
 #endif
     if NIL_P(cbs->io){
-		return rb_str_new2("");
+		return rb_tainted_str_new2("");
     }else{	
 	   	GetOpenFile(cbs->io, fptr);
 	    rb_io_check_readable(fptr);
 #ifdef RUBY19
 		return rb_file_s_expand_path( 1, &fptr->pathv );
 #else
-		VALUE path = rb_str_new2(fptr->path);
+		VALUE path = rb_tainted_str_new2(fptr->path);
 		return rb_file_s_expand_path( 1, &path );
 #endif
 	}
@@ -217,7 +219,7 @@ static VALUE
 control_block_buf_get(VALUE cb)
 {
  	rb_aiocb_t *cbs = GetCBStruct(cb);
-	return cbs->cb.aio_buf == NULL ? rb_str_new2("") : rb_str_new2((char *)cbs->cb.aio_buf);
+	return cbs->cb.aio_buf == NULL ? rb_tainted_str_new2("") : rb_tainted_str_new2((char *)cbs->cb.aio_buf);
 }
 
 static VALUE
@@ -299,13 +301,10 @@ static VALUE
 control_block_close(VALUE cb)
 {
  	rb_aiocb_t *cbs = GetCBStruct(cb);
-	if NIL_P(cbs->io){
-		return Qfalse;
-    }else{
-		rb_io_close(cbs->io);
-		cbs->io = Qnil; 
-		return Qtrue;
-	} 	
+	if NIL_P(cbs->io) return Qfalse;
+	rb_io_close(cbs->io);
+	cbs->io = Qnil; 
+	return Qtrue;
 }
 
 /*
@@ -317,7 +316,7 @@ rb_aio_read_error()
     switch(errno){
        case EAGAIN: 
 	        rb_aio_error( "[EAGAIN] The request cannot be queued due to exceeding resource (queue) limitations." );
-		  break;
+		    break;
        case EBADF: 
 	        rb_aio_error( "[EBADF] File descriptor is not valid for reading." );
 			break;
