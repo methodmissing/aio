@@ -26,7 +26,7 @@
 #define RARRAY_LEN(obj) RARRAY(obj)->len
 #endif
 
-#ifdef HAVE_TBR
+#ifdef RUBY19
   #include "ruby/io.h" 
   #define TRAP_BEG
   #define TRAP_END
@@ -57,6 +57,9 @@ typedef struct{
 static ID s_to_str, s_to_s, s_buf;
 static ID s_inprogress, s_alldone, s_canceled, s_notcanceled;
 static ID s_sync, s_wait, s_nowait, s_nop, s_read, s_write, s_queue;
+static VALUE c_aio_sync, c_aio_queue, c_aio_inprogress, c_aio_alldone;
+static VALUE c_aio_canceled, c_aio_notcanceled, c_aio_wait, c_aio_nowait;
+static VALUE c_aio_nop, c_aio_read, c_aio_write;
 
 static void rb_aio_error( char * msg ){
     rb_raise( eAio, msg );
@@ -91,7 +94,7 @@ control_block_nbytes_set(VALUE cb, VALUE bytes)
 static VALUE
 control_block_open(int argc, VALUE *argv, VALUE cb)
 {
-#ifdef HAVE_TBR
+#ifdef RUBY19
 	rb_io_t *fptr;
 #else	
 	OpenFile *fptr;
@@ -103,14 +106,13 @@ control_block_open(int argc, VALUE *argv, VALUE cb)
     struct stat stats;
    
     Check_Type(file, T_STRING);	
-    Check_Type(file, T_STRING);
 
     cbs->io = rb_file_open(RSTRING_PTR(file), RSTRING_PTR(mode));
     GetOpenFile(cbs->io, fptr);
     rb_io_check_readable(fptr); 	
 
     if ( cbs->cb.aio_fildes == 0 && cbs->cb.aio_nbytes == 0){
-#ifdef HAVE_TBR
+#ifdef RUBY19
       cbs->cb.aio_fildes = fptr->fd;
 #else	
       cbs->cb.aio_fildes = fileno(fptr->f);
@@ -177,7 +179,7 @@ static VALUE
 control_block_path(VALUE cb)
 { 
 	rb_aiocb_t *cbs = GetCBStruct(cb);
-#ifdef HAVE_TBR
+#ifdef RUBY19
 	rb_io_t *fptr;
 #else	
 	OpenFile *fptr;
@@ -187,7 +189,7 @@ control_block_path(VALUE cb)
     }else{	
 	   	GetOpenFile(cbs->io, fptr);
 	    rb_io_check_readable(fptr);
-#ifdef HAVE_TBR
+#ifdef RUBY19
 		return rb_file_s_expand_path( 1, &fptr->pathv );
 #else
 		VALUE path = rb_str_new2(fptr->path);
@@ -493,13 +495,13 @@ rb_aio_s_lio_listio( VALUE aio, VALUE cbs )
 {
 	VALUE mode_arg, mode;
 	mode_arg = RARRAY_PTR(cbs)[0];
-	if (mode_arg == rb_const_get(mAio, s_wait) || mode_arg == rb_const_get(mAio, s_nowait) || mode_arg == rb_const_get(mAio, s_nop)){
+	if (mode_arg == c_aio_wait || mode_arg == c_aio_nowait || mode_arg == c_aio_nop){
 		mode = rb_ary_shift(cbs);
 	}else{
-	    mode = rb_const_get(mAio, s_wait);
+	    mode = c_aio_wait;
 	}
 	int ops = RARRAY_LEN(cbs);
-	if (ops > AIO_MAX_LIST) return rb_const_get(mAio, s_queue);
+	if (ops > AIO_MAX_LIST) return c_aio_queue;
 	switch(NUM2INT(mode)){
 	    case LIO_WAIT:
 	         return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );   
@@ -540,13 +542,12 @@ rb_aio_cancel( int fd, void *cb )
 	if (ret != 0) rb_aio_cancel_error();
     switch(ret){
        case AIO_CANCELED: 
-	        return rb_const_get(mAio, s_canceled);
-		    break;
+	        return c_aio_canceled;
        case AIO_NOTCANCELED: 
-	        return rb_const_get(mAio, s_notcanceled);
+	        return c_aio_notcanceled;
 			break;
        case AIO_ALLDONE: 
-            return rb_const_get(mAio, s_alldone);
+            return c_aio_alldone;
 			break;
 	}
 	return Qnil;			
@@ -688,7 +689,7 @@ rb_aio_s_sync( VALUE aio, VALUE op, VALUE cb )
 	}
 	Check_Type( op, T_FIXNUM );
 	/* XXX handle AIO::DSYNC gracefully as well */
-	if (op != rb_const_get(mAio, s_sync)) rb_aio_error("Operation AIO::SYNC expected");
+	if (op != c_aio_sync) rb_aio_error("Operation AIO::SYNC expected");
     return rb_aio_sync( NUM2INT(op), &cbs->cb );	
 }
 
@@ -750,6 +751,22 @@ void Init_aio()
     rb_define_const(mAio, "NOP", INT2NUM(LIO_NOP));
     rb_define_const(mAio, "READ", INT2NUM(LIO_READ));
     rb_define_const(mAio, "WRITE", INT2NUM(LIO_WRITE));
+
+	c_aio_sync = INT2NUM(O_SYNC);
+	c_aio_queue = INT2NUM(100);
+	c_aio_inprogress = INT2NUM(EINPROGRESS);
+	c_aio_alldone = INT2NUM(AIO_ALLDONE);
+	c_aio_canceled = INT2NUM(AIO_CANCELED);
+	c_aio_notcanceled = INT2NUM(AIO_NOTCANCELED);
+	c_aio_wait = INT2NUM(LIO_WAIT);
+	c_aio_nowait = INT2NUM(LIO_NOWAIT);
+	c_aio_nop = INT2NUM(LIO_NOP);
+	c_aio_read = INT2NUM(LIO_READ);
+	c_aio_write = INT2NUM(LIO_WRITE);
+
+	static VALUE c_aio_sync, c_aio_queue, c_aio_inprogress, c_aio_alldone;
+	static VALUE c_aio_canceled, c_aio_notcanceled, c_aio_wait, c_aio_nowait;
+	static VALUE c_aio_nop, c_aio_read, c_aio_write;
 
     eAio = rb_define_class_under(mAio, "Error", rb_eStandardError);
 
