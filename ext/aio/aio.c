@@ -493,11 +493,7 @@ rb_aio_s_lio_listio( VALUE aio, VALUE cbs )
 {
 	VALUE mode_arg, mode;
 	mode_arg = RARRAY_PTR(cbs)[0];
-	if (mode_arg == c_aio_wait || mode_arg == c_aio_nowait || mode_arg == c_aio_nop){
-		mode = rb_ary_shift(cbs);
-	}else{
-	    mode = c_aio_wait;
-	}
+	mode = (mode_arg == c_aio_wait || mode_arg == c_aio_nowait || mode_arg == c_aio_nop) ? rb_ary_shift(cbs) : c_aio_wait;
 	int ops = RARRAY_LEN(cbs);
 	if (ops > AIO_MAX_LIST) return c_aio_queue;
 	switch(NUM2INT(mode)){
