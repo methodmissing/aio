@@ -69,7 +69,6 @@ static void rb_aio_error( char * msg ){
 static void 
 mark_control_block(rb_aiocb_t *cb)
 {
-	rb_gc_mark(cb->cb.aio_buf);
 	rb_gc_mark(cb->io);
 	rb_gc_mark(cb->rcb);
 }
