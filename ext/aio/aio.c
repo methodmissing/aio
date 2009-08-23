@@ -55,8 +55,7 @@ typedef struct{
 } rb_aiocb_t;
 
 static ID s_to_str, s_to_s, s_buf;
-static ID s_inprogress, s_alldone, s_canceled, s_notcanceled;
-static ID s_sync, s_wait, s_nowait, s_nop, s_read, s_write, s_queue;
+
 static VALUE c_aio_sync, c_aio_queue, c_aio_inprogress, c_aio_alldone;
 static VALUE c_aio_canceled, c_aio_notcanceled, c_aio_wait, c_aio_nowait;
 static VALUE c_aio_nop, c_aio_read, c_aio_write;
@@ -698,18 +697,6 @@ void Init_aio()
 	s_buf = rb_intern("buf");
 	s_to_str = rb_intern("to_str");
 	s_to_s = rb_intern("to_s");
-
-	s_queue = rb_intern("QUEUE");
-	s_sync = rb_intern("SYNC");
-	s_inprogress = rb_intern("INPROGRESS");
-	s_alldone = rb_intern("ALLDONE");
-	s_canceled = rb_intern("CANCELED");
-	s_notcanceled = rb_intern("NOTCANCELED");
-	s_nowait = rb_intern("NOWAIT");
-	s_wait = rb_intern("WAIT");
-	s_nop = rb_intern("NOP");
-	s_read = rb_intern("READ");
-	s_write = rb_intern("WRITE");
 	
     mAio = rb_define_module("AIO");
 
