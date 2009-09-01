@@ -121,12 +121,11 @@ class TestControlBlock < Test::Unit::TestCase
 
   private
   
-    def assert_invalid( &block )
-      assert_aio_error do
-        block.call
-        @cb.validate!
-        @cb.reset!        
-      end  
-    end
-    
+  def assert_invalid( &block )
+    assert_aio_error do
+      block.call
+      @cb.validate!
+      @cb.reset!        
+    end  
+  end  
 end

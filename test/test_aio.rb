@@ -85,4 +85,12 @@ class TestAio < Test::Unit::TestCase
     AIO.read( cb )
     assert_equal nil, AIO.sync( AIO::SYNC, cb)    
   end  
+  
+  def test_write
+    cb = CB('1.txt')
+    assert cb.open?
+    assert_raises IOError do
+      assert_equal nil, AIO.write( cb )
+    end
+  end  
 end

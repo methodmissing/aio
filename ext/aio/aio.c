@@ -306,6 +306,30 @@ control_block_close(VALUE cb)
 }
 
 /*
+ *  Error handling for aio_write
+ */
+static void 
+rb_aio_write_error()
+{
+    switch(errno){
+       case EAGAIN: 
+            rb_aio_error( "[EAGAIN] The request cannot be queued due to exceeding resource (queue) limitations." );
+       case EBADF: 
+            rb_aio_error( "[EBADF] File descriptor is not valid for writing." );
+       case ENOSYS: 
+            rb_aio_error( "[ENOSYS] aio_read not supported by this implementation." );
+       case EINVAL: 
+            rb_aio_error( "[EINVAL] Read offset is invalid" );
+       case EOVERFLOW: 
+            rb_aio_error( "[EOVERFLOW] Control block offset exceeded." );
+       case ECANCELED:
+            rb_aio_error( "[ECANCELED] The requested I/O was canceled by an explicit aio_cancel() request." );
+       case EFBIG:
+            rb_aio_error( "[EFBIG] Wrong offset." );
+    }
+}
+
+/*
  *  Error handling for aio_read
  */
 static void 
@@ -326,7 +350,27 @@ rb_aio_read_error()
 }
 
 /*
- *  Initiates a *blocking* aio_read
+ *  Initiates a *blocking* write
+ */
+static VALUE 
+rb_aio_write( aiocb_t *cb )
+{
+    int ret;
+    
+    TRAP_BEG;
+    ret = aio_write( cb );
+    TRAP_END;
+    if (ret != 0) rb_aio_write_error();
+    while ( aio_error( cb ) == EINPROGRESS );
+    if ((ret = aio_return( cb )) > 0) {
+      return FIX2INT(cb->aio_nbytes);
+    }else{
+      return INT2NUM(errno);
+    }
+}
+
+/*
+ *  Initiates a *blocking* read
  */
 static VALUE 
 rb_aio_read( aiocb_t *cb )
@@ -435,6 +479,31 @@ rb_io_closes( VALUE cbs ){
     for (io=0; io < RARRAY_LEN(cbs); io++) {
       control_block_close( RARRAY_PTR(cbs)[io] );
     }  
+}
+
+/*
+ *  call-seq:
+ *     AIO.write(cb) -> fixnum
+ *  
+ *  Asynchronously writes to a file.This is an initial *blocking* implementation until
+ *  cross platform notification is supported.
+ */
+static VALUE 
+rb_aio_s_write( VALUE aio, VALUE cb )
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);
+#ifdef RUBY19
+    rb_io_t *fptr;
+#else	
+    OpenFile *fptr;
+#endif
+    GetOpenFile(cbs->io, fptr);
+    rb_io_check_writable(fptr);    
+    if (rb_block_given_p()){
+      cbs->rcb = rb_block_proc();
+    }
+    
+    return rb_ensure( rb_aio_write, (VALUE)&cbs->cb, control_block_close, cb );
 }
 
 /*
@@ -719,6 +788,7 @@ void Init_aio()
 
     rb_define_module_function( mAio, "lio_listio", rb_aio_s_lio_listio, -2 );
     rb_define_module_function( mAio, "read", rb_aio_s_read, 1 );
+    rb_define_module_function( mAio, "write", rb_aio_s_write, 1 );
     rb_define_module_function( mAio, "cancel", rb_aio_s_cancel, -1 );
     rb_define_module_function( mAio, "return", rb_aio_s_return, 1 );
     rb_define_module_function( mAio, "error", rb_aio_s_error, 1 );
