@@ -1,3 +1,4 @@
+$:.unshift "."
 require File.dirname(__FILE__) + '/helper'
 
 class TestAio < Test::Unit::TestCase
@@ -39,21 +40,21 @@ class TestAio < Test::Unit::TestCase
   end 
 
   def test_read
-    cb = CB(fixture( '1.txt' ))
+    cb = CB('1.txt')
     assert cb.open?
     assert_equal 'one', AIO.read( cb )
     assert !cb.open?
   end
 
   def test_cancel_with_cb
-    cb = CB(fixture( '1.txt' ))
+    cb = CB('1.txt' )
     assert cb.open?    
     AIO.read( cb )
     assert_equal AIO::ALLDONE, AIO.cancel( cb.fildes, cb )
   end
 
   def test_cancel_without_cb
-    cb = CB(fixture( '1.txt' ))
+    cb = CB('1.txt')
     assert_equal AIO::ALLDONE, AIO.cancel( cb.fildes )
   end
   
@@ -64,7 +65,7 @@ class TestAio < Test::Unit::TestCase
   end
   
   def test_return
-    cb = CB(fixture( '1.txt' ))
+    cb = CB('1.txt')
     AIO.read( cb )
     assert_aio_error do
       AIO.return(cb)
@@ -72,7 +73,7 @@ class TestAio < Test::Unit::TestCase
   end
   
   def test_error
-    cb = CB(fixture( '1.txt' ))
+    cb = CB('1.txt')
     AIO.read( cb )
     assert_aio_error do
       AIO.error(cb)
@@ -80,7 +81,7 @@ class TestAio < Test::Unit::TestCase
   end
   
   def test_sync 
-    cb = CB(fixture( '1.txt' ))
+    cb = CB('1.txt')
     AIO.read( cb )
     assert_equal nil, AIO.sync( AIO::SYNC, cb)    
   end  
