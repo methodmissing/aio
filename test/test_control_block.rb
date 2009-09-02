@@ -8,7 +8,7 @@ class TestControlBlock < Test::Unit::TestCase
 
   def test_open
     @cb.open( fixtures( '1.txt' ).first ) 
-    assert (2..5).include?( @cb.fildes )
+    assert (2..10).include?( @cb.fildes )
     assert_equal 3, @cb.nbytes
     assert_nothing_raised do
       @cb.validate!
@@ -59,6 +59,14 @@ class TestControlBlock < Test::Unit::TestCase
     assert_raises TypeError do
       @cb.fildes = '12'
     end
+  end
+
+  def test_buffer_equals
+    assert_equal '', @cb.buf
+    assert_equal 0, @cb.nbytes
+    @cb.buf = 'buffer'
+    assert_equal 'buffer', @cb.to_s
+    assert_equal 6, @cb.nbytes
   end
 
   def test_buffer

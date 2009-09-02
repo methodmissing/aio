@@ -86,11 +86,19 @@ class TestAio < Test::Unit::TestCase
     assert_equal nil, AIO.sync( AIO::SYNC, cb)    
   end  
   
-  def test_write
+  def test_write_not_writable
     cb = CB('1.txt')
     assert cb.open?
     assert_raises IOError do
       assert_equal nil, AIO.write( cb )
     end
   end  
+ 
+  def test_write
+    cb = WCB('1.txt','w+')
+    assert cb.open?
+    cb.buf = 'buffer'
+    assert_equal 6, AIO.write(cb)
+    assert_equal 'buffer', IO.read(scratch('1.txt'))
+  end
 end

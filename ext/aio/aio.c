@@ -220,6 +220,16 @@ control_block_buf_get(VALUE cb)
 }
 
 static VALUE
+control_block_buf_set(VALUE cb, VALUE buf)
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);
+    Check_Type(buf, T_STRING);
+    cbs->cb.aio_buf = RSTRING_PTR(buf);
+	cbs->cb.aio_nbytes = RSTRING_LEN(buf);
+    return buf;
+}
+
+static VALUE
 control_block_nbytes_get(VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
@@ -363,7 +373,7 @@ rb_aio_write( aiocb_t *cb )
     if (ret != 0) rb_aio_write_error();
     while ( aio_error( cb ) == EINPROGRESS );
     if ((ret = aio_return( cb )) > 0) {
-      return FIX2INT(cb->aio_nbytes);
+     return INT2NUM(cb->aio_nbytes);
     }else{
       return INT2NUM(errno);
     }
@@ -739,6 +749,7 @@ void Init_aio()
     rb_define_method(rb_cCB, "fildes", control_block_fildes_get, 0);
     rb_define_method(rb_cCB, "fildes=", control_block_fildes_set, 1);
     rb_define_method(rb_cCB, "buf", control_block_buf_get, 0);
+    rb_define_method(rb_cCB, "buf=", control_block_buf_set, 1);
     rb_define_method(rb_cCB, "nbytes", control_block_nbytes_get, 0);
     rb_define_method(rb_cCB, "nbytes=", control_block_nbytes_set, 1);
     rb_define_method(rb_cCB, "offset", control_block_offset_get, 0);
