@@ -10,9 +10,7 @@ class TestControlBlock < Test::Unit::TestCase
     @cb.open( fixtures( '1.txt' ).first ) 
     assert (2..10).include?( @cb.fildes )
     assert_equal 3, @cb.nbytes
-    assert_nothing_raised do
-      @cb.validate!
-    end
+    @cb.validate
   end  
   
   def test_open_access_mode
@@ -33,11 +31,11 @@ class TestControlBlock < Test::Unit::TestCase
     assert @cb.open?    
   end
   
-  def test_close!
-    assert_equal false, @cb.close!
+  def test_close
+    assert_equal false, @cb.close
     @cb.open( fixtures( '2.txt' ).first )
     assert @cb.open?    
-    assert_equal true, @cb.close!    
+    assert_equal true, @cb.close    
     assert !@cb.open?
   end
 
@@ -102,17 +100,20 @@ class TestControlBlock < Test::Unit::TestCase
   def test_lio_opcode
     assert_equal AIO::READ, @cb.lio_opcode
     assert_equal AIO::WRITE, @cb.lio_opcode = AIO::WRITE
+    assert_aio_error do
+      @cb.lio_opcode = 12
+    end 
   end
   
   def test_reset
     @cb.offset = 4096
     @cb.lio_opcode = AIO::WRITE
-    @cb.reset!
+    @cb.reset
     assert_equal 0, @cb.offset
     assert_equal AIO::READ, @cb.lio_opcode    
   end
     
-  def test_validate!
+  def test_validate
     assert_invalid{ @cb.fildes = 0 }
     assert_invalid{ @cb.offset = -1 }
     assert_invalid{ @cb.nbytes = 0 }
@@ -124,7 +125,7 @@ class TestControlBlock < Test::Unit::TestCase
       self.offset = 0
       self.nbytes = 4096
     end
-    assert_equal cb, cb.validate!      
+    assert_equal cb, cb.validate      
   end
 
   private
@@ -132,8 +133,8 @@ class TestControlBlock < Test::Unit::TestCase
   def assert_invalid( &block )
     assert_aio_error do
       block.call
-      @cb.validate!
-      @cb.reset!        
+      @cb.validate
+      @cb.reset     
     end  
   end  
 end

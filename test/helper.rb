@@ -1,8 +1,9 @@
+require 'fileutils'
 require 'test/unit'
 require 'aio'
 
 FIXTURES = File.dirname(__FILE__) + "/fixtures"
-SCRATCH = File.dirname(__FILE__) + "/scratch"
+SCRATCH_SPACE = File.dirname(__FILE__) + "/scratch"
 
 def fixtures(*files)
   files.map{|f| File.join(FIXTURES,f) }
@@ -13,7 +14,7 @@ def fixture(file)
 end
 
 def scratch_space(*files)
-  files.map{|f| File.join(SCRATCH,f) }
+  files.map{|f| File.join(SCRATCH_SPACE,f) }
 end
 
 def scratch(file)

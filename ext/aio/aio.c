@@ -280,6 +280,7 @@ control_block_lio_opcode_set(VALUE cb, VALUE opcode)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
     Check_Type(opcode, T_FIXNUM);
+    if (opcode != c_aio_read && opcode != c_aio_write) rb_aio_error( "Only AIO::READ and AIO::WRITE modes supported" );
     cbs->cb.aio_lio_opcode = NUM2INT(opcode);
     return opcode;
 }
@@ -758,11 +759,11 @@ void Init_aio()
     rb_define_method(rb_cCB, "reqprio=", control_block_reqprio_set, 1);
     rb_define_method(rb_cCB, "lio_opcode", control_block_lio_opcode_get, 0);
     rb_define_method(rb_cCB, "lio_opcode=", control_block_lio_opcode_set, 1);
-    rb_define_method(rb_cCB, "validate!", control_block_validate, 0);
-    rb_define_method(rb_cCB, "reset!", control_block_reset, 0);
+    rb_define_method(rb_cCB, "validate", control_block_validate, 0);
+    rb_define_method(rb_cCB, "reset", control_block_reset, 0);
     rb_define_method(rb_cCB, "open", control_block_open, -1);
     rb_define_method(rb_cCB, "open?", control_block_open_p, 0);
-    rb_define_method(rb_cCB, "close!", control_block_close, 0);
+    rb_define_method(rb_cCB, "close", control_block_close, 0);
     rb_define_method(rb_cCB, "path", control_block_path, 0);
  
     rb_alias( rb_cCB, s_to_str, s_buf );

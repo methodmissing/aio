@@ -101,4 +101,9 @@ class TestAio < Test::Unit::TestCase
     assert_equal 6, AIO.write(cb)
     assert_equal 'buffer', IO.read(scratch('1.txt'))
   end
+  
+  def teardown
+    FileUtils.rm Dir.glob("#{SCRATCH_SPACE}/*.txt")
+  end
+  
 end
