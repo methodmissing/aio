@@ -18,7 +18,7 @@ class TestAio < Test::Unit::TestCase
   def test_listio_read_blocking
     cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| CB(f) }
     assert_equal %w(one two three four), AIO.lio_listio( *([AIO::WAIT].concat(cbs)) )        
-  end
+  end  
 
   def test_listio_read_non_blocking
     cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| CB(f) }
@@ -33,6 +33,26 @@ class TestAio < Test::Unit::TestCase
     sleep(1)
     # TODO where's the ETS char coming from ?
     assert_equal ["\x03", "", "", ""], cbs.map{|cb| cb.buf }   
+  end
+
+  def test_listio_write_blocking
+    cbs = scratch_space( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| WCB(f) }
+    assert_equal [0, 0, 0, 0], AIO.lio_listio( *([AIO::WAIT].concat(cbs)) )        
+  end
+
+  def test_listio_write_non_blocking
+    cbs = scratch_space( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| WCB(f) }
+    assert_equal nil, AIO.lio_listio( *([AIO::NOWAIT].concat(cbs)) )     
+    sleep(1)
+    assert_equal [0, 0, 0, 0], cbs.map{|cb| cb.buf }   
+  end
+
+  def test_listio_write_noop
+    cbs = scratch_space( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| WCB(f) }
+    assert_equal nil, AIO.lio_listio( *([AIO::NOP].concat(cbs)) )     
+    sleep(1)
+    # TODO where's the ETS char coming from ?
+    assert_equal [0,0,0,0], cbs.map{|cb| cb.buf }   
   end
 
   def test_listio_exceed_limits

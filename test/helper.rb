@@ -29,11 +29,11 @@ end
 
 module Kernel
   private
-  def CB(file = nil, mode = nil)
+  def CB(file = nil, mode = 'r')
     aio_cb(file, mode, :fixture) 
   end
   
-  def WCB(file = nil, mode = nil)
+  def WCB(file = nil, mode = 'w+')
     aio_cb(file, mode, :scratch) 
   end  
   
@@ -41,6 +41,7 @@ module Kernel
     cb = AIO::CB.new
     if file
       cb.open(__send__(meth,file),mode)
+      cb.lio_opcode = AIO::WRITE if mode =~ /w/ 
       cb
     else
       cb

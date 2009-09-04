@@ -165,11 +165,12 @@ control_block_alloc(VALUE klass)
 static VALUE
 control_block_initialize(int argc, VALUE *argv, VALUE cb)
 {
-    VALUE file;
-    VALUE args[1];
-    rb_scan_args(argc, argv, "01", &file);
+    VALUE file, mode;
+    VALUE args[2];
+    rb_scan_args(argc, argv, "02", &file, &mode);
     if (RTEST(file)){ 
-      args[0] = file;	
+      args[0] = file;
+      args[1] = mode;
       control_block_open(1, (VALUE *)args, cb);
     }
     if (rb_block_given_p()) rb_obj_instance_eval( 0, 0, cb );
