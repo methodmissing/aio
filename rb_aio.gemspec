@@ -13,6 +13,7 @@ Gem::Specification.new do |s|
     README
     Rakefile
     bench/read.rb
+    bench/write.rb
     ext/aio/extconf.rb
     ext/aio/aio.c
     aio.gemspec
