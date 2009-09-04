@@ -404,7 +404,7 @@ rb_aio_read( aiocb_t *cb )
  *  Error handling for lio_listio
  */
 static void 
-rb_aio_read_multi_error()
+rb_aio_listio_error()
 {
     switch(errno){
        case EAGAIN: 
@@ -420,27 +420,34 @@ rb_aio_read_multi_error()
     }
 }
 
-/*
- *  Initiates lio_listio
- */
-static int 
-rb_aio_lio_listio( int mode, VALUE *cbs, aiocb_t **list )
+static void
+rb_aio_lio_listio0( int mode, VALUE *cbs, aiocb_t **list, int ops )
 {
-    int op, ret;
-    int ops = RARRAY_LEN(cbs);	
+    int op;
     bzero( (char *)list, sizeof(list) );	
     for (op=0; op < ops; op++) {		
         rb_aiocb_t *cb = GetCBStruct(RARRAY_PTR(cbs)[op]);
         if (rb_block_given_p()){
           cb->rcb = rb_block_proc();
         }
-      list[op] = &cb->cb;       
+      list[op] = &cb->cb;
     }
+}
+
+/*
+ *  Initiates lio_listio
+ */
+static int 
+rb_aio_lio_listio( int mode, VALUE *cbs, aiocb_t **list )
+{
+    int ret;
+    int ops = RARRAY_LEN(cbs);	
+    rb_aio_lio_listio0(mode, cbs, list, ops);
     TRAP_BEG;
     ret = lio_listio( mode, list, ops, NULL );
     TRAP_END;
-    if (ret != 0) rb_aio_read_multi_error();
-    return ops; 	
+    if (ret != 0) rb_aio_listio_error();
+    return ops; 
 }
 
 /*
@@ -454,7 +461,11 @@ rb_aio_lio_listio_blocking( VALUE *cbs )
     int ops = rb_aio_lio_listio( LIO_WAIT, cbs, list );
     VALUE results = rb_ary_new2( ops );
     for (op=0; op < ops; op++) {
-        rb_ary_push( results, rb_tainted_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
+      if (list[op]->aio_lio_opcode == LIO_READ){ 
+         rb_ary_push( results, rb_tainted_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
+      }else{
+         rb_ary_push( results, INT2FIX(list[op]->aio_nbytes) );
+      }
     } 
     return results;
 }	

@@ -1,7 +1,7 @@
-require 'rake'
+#!/usr/bin/env rake
 require 'rake/testtask'
 require 'rake/clean'
-
+$:.unshift(File.expand_path('lib'))
 AIO_ROOT = 'ext/aio'
 
 desc 'Default: test'
