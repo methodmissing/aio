@@ -7,7 +7,7 @@ class TestAio < Test::Unit::TestCase
     cbs = fixtures( *%w(1.txt 2.txt 3.txt 4.txt) ).map{|f| CB(f) }
     cbs.each{|cb| assert cb.open? }
     assert_equal %w(one two three four), AIO.lio_listio( *cbs )
-    cbs.each{|cb| assert !cb.open? }
+    cbs.each{|cb| assert cb.closed? }
   end
 
   def test_tainted_results
@@ -63,7 +63,7 @@ class TestAio < Test::Unit::TestCase
     cb = CB('1.txt')
     assert cb.open?
     assert_equal 'one', AIO.read( cb )
-    assert !cb.open?
+    assert cb.closed?
   end
 
   def test_cancel_with_cb

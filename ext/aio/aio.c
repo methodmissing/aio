@@ -85,7 +85,7 @@ control_block_nbytes_set(VALUE cb, VALUE bytes)
     rb_aiocb_t *cbs = GetCBStruct(cb);
     Check_Type(bytes, T_FIXNUM);
     cbs->cb.aio_nbytes = FIX2INT(bytes);
-    if (cbs->cb.aio_buf != NULL) xfree((char *)cbs->cb.aio_buf);
+    if (cbs->cb.aio_buf != NULL) free((char *)cbs->cb.aio_buf);
     cbs->cb.aio_buf = malloc(cbs->cb.aio_nbytes + 1);
     if (!cbs->cb.aio_buf) rb_aio_error( "not able to allocate a read buffer" );	
     return bytes;
@@ -128,6 +128,7 @@ static void
 control_block_reset0(rb_aiocb_t *cb)
 {    
     bzero(cb, sizeof(rb_aiocb_t));
+    bzero(&cb->cb, sizeof(aiocb_t));
     /* cleanup with rb_io_close(cb->io) */
     cb->io = Qnil;
     cb->rcb = Qnil;
@@ -186,15 +187,31 @@ control_block_path(VALUE cb)
 #else	
     OpenFile *fptr;
 #endif
-    if NIL_P(cbs->io) return rb_tainted_str_new2("");
+    if NIL_P(cbs->io) return rb_str_new2("");
     GetOpenFile(cbs->io, fptr);
     rb_io_check_readable(fptr);
 #ifdef RUBY19
     return rb_file_s_expand_path( 1, &fptr->pathv );
 #else
-    VALUE path = rb_tainted_str_new2(fptr->path);
+    VALUE path = rb_str_new2(fptr->path);
     return rb_file_s_expand_path( 1, &path );
 #endif
+}
+
+static VALUE
+control_block_callback_get(VALUE cb)
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);
+    return cbs->rcb;
+}
+
+static VALUE
+control_block_callback_set(VALUE cb, VALUE rcb)
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);
+    if (RBASIC(rcb)->klass != rb_cProc) rb_aio_error("Block required for callback!");
+    cbs->rcb = rcb;
+    return cbs->rcb;
 }
 
 static VALUE
@@ -217,7 +234,7 @@ static VALUE
 control_block_buf_get(VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
-    return cbs->cb.aio_buf == NULL ? rb_tainted_str_new2("") : rb_tainted_str_new2((char *)cbs->cb.aio_buf);
+    return cbs->cb.aio_buf == NULL ? rb_str_new2("") : rb_str_new((char *)cbs->cb.aio_buf, cbs->cb.aio_nbytes);
 }
 
 static VALUE
@@ -225,8 +242,12 @@ control_block_buf_set(VALUE cb, VALUE buf)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
     Check_Type(buf, T_STRING);
+    if (cbs->cb.aio_buf != NULL){ 
+      free((char *)cbs->cb.aio_buf);
+      cbs->cb.aio_buf = NULL;
+    }
     cbs->cb.aio_buf = RSTRING_PTR(buf);
-	cbs->cb.aio_nbytes = RSTRING_LEN(buf);
+    cbs->cb.aio_nbytes = RSTRING_LEN(buf);
     return buf;
 }
 
@@ -304,6 +325,13 @@ control_block_open_p(VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
     return NIL_P(cbs->io) ? Qfalse : Qtrue;
+}
+
+static VALUE
+control_block_closed_p(VALUE cb)
+{
+    rb_aiocb_t *cbs = GetCBStruct(cb);
+    return NIL_P(cbs->io) ? Qtrue : Qfalse;
 }
 
 static VALUE
@@ -395,7 +423,7 @@ rb_aio_read( aiocb_t *cb )
     if (ret != 0) rb_aio_read_error();
     while ( aio_error( cb ) == EINPROGRESS );
     if ((ret = aio_return( cb )) > 0) {
-      return rb_tainted_str_new( (char *)cb->aio_buf, cb->aio_nbytes );
+      return rb_str_new( (char *)cb->aio_buf, cb->aio_nbytes );
     }else{
       return INT2NUM(errno);
     }
@@ -463,7 +491,7 @@ rb_aio_lio_listio_blocking( VALUE *cbs )
     VALUE results = rb_ary_new2( ops );
     for (op=0; op < ops; op++) {
       if (list[op]->aio_lio_opcode == LIO_READ){ 
-         rb_ary_push( results, rb_tainted_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
+         rb_ary_push( results, rb_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
       }else{
          rb_ary_push( results, INT2FIX(list[op]->aio_nbytes) );
       }
@@ -771,11 +799,14 @@ void Init_aio()
     rb_define_method(rb_cCB, "reqprio=", control_block_reqprio_set, 1);
     rb_define_method(rb_cCB, "lio_opcode", control_block_lio_opcode_get, 0);
     rb_define_method(rb_cCB, "lio_opcode=", control_block_lio_opcode_set, 1);
+    rb_define_method(rb_cCB, "callback", control_block_callback_get, 0);
+    rb_define_method(rb_cCB, "callback=", control_block_callback_set, 1);
     rb_define_method(rb_cCB, "validate", control_block_validate, 0);
     rb_define_method(rb_cCB, "reset", control_block_reset, 0);
     rb_define_method(rb_cCB, "open", control_block_open, -1);
     rb_define_method(rb_cCB, "open?", control_block_open_p, 0);
     rb_define_method(rb_cCB, "close", control_block_close, 0);
+    rb_define_method(rb_cCB, "closed?", control_block_closed_p, 0);
     rb_define_method(rb_cCB, "path", control_block_path, 0);
  
     rb_alias( rb_cCB, s_to_str, s_buf );

@@ -7,7 +7,7 @@ class TestControlBlock < Test::Unit::TestCase
   end
 
   def test_open
-    @cb.open( fixtures( '1.txt' ).first ) 
+    @cb.open( fixture( '1.txt' ) ) 
     assert (2..10).include?( @cb.fildes )
     assert_equal 3, @cb.nbytes
     @cb.validate
@@ -15,40 +15,47 @@ class TestControlBlock < Test::Unit::TestCase
   
   def test_open_access_mode
     assert_raises ArgumentError do
-      @cb.open( fixtures( '1.txt' ).first, "ww" )
+      @cb.open( fixture( '1.txt' ), "ww" )
     end
   end
 
   def test_path
     assert_equal '', @cb.path
-    @cb.open( fixtures( '1.txt' ).first )
+    @cb.open( fixture( '1.txt' ) )
     assert_match /test\/fixtures\/1\.txt/, @cb.path    
   end
 
   def test_open?
     assert !@cb.open?
-    @cb.open( fixtures( '2.txt' ).first )
+    @cb.open( fixture( '2.txt' ) )
     assert @cb.open?    
   end
   
   def test_close
     assert_equal false, @cb.close
-    @cb.open( fixtures( '2.txt' ).first )
+    @cb.open( fixture( '2.txt' ) )
     assert @cb.open?    
     assert_equal true, @cb.close    
     assert !@cb.open?
   end
 
+  def test_closed?
+    @cb.open( fixture( '2.txt' ) )
+    assert @cb.open?    
+    @cb.close    
+    assert @cb.closed?    
+  end
+
   def test_init_with_file
-    cb = AIO::CB.new fixtures( '2.txt' ).first
-    assert cb.open?
+    @cb = AIO::CB.new fixture( '2.txt' )
+    assert @cb.open?
   end
   
   def test_init_with_block
-    cb = AIO::CB.new do 
+    @cb = AIO::CB.new do 
       self.fildes = 12
     end  
-    assert_equal 12, cb.fildes
+    assert_equal 12, @cb.fildes
   end
   
   def test_file_descriptor
@@ -120,12 +127,22 @@ class TestControlBlock < Test::Unit::TestCase
     assert_invalid{ @cb.nbytes = -1 }
     assert_invalid{ @cb.reqprio = -1 }
     assert_invalid{ @cb.lio_opcode = 12 }
-    cb = AIO::CB.new do 
+    @cb = AIO::CB.new do 
       self.fildes = 1
       self.offset = 0
       self.nbytes = 4096
     end
-    assert_equal cb, cb.validate      
+    assert_equal @cb, @cb.validate      
+  end
+  def test_callback_equals
+    assert_aio_error do
+      @cb.callback = :invalid
+    end
+    assert_instance_of Proc, @cb.callback = Proc.new{|e| p e }
+  end
+
+  def teardown
+    @cb.reset
   end
 
   private
