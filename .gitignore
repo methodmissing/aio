@@ -3,4 +3,4 @@ Makefile
 mkmf.log
 .DS_Store
 *.o
-test/scratch/*
+test/scratch/*.txt
