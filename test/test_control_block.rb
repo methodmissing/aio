@@ -1,3 +1,4 @@
+$:.unshift "."
 require File.dirname(__FILE__) + '/helper'
 
 class TestControlBlock < Test::Unit::TestCase
@@ -146,7 +147,6 @@ class TestControlBlock < Test::Unit::TestCase
   end
 
   private
-  
   def assert_invalid( &block )
     assert_aio_error do
       block.call

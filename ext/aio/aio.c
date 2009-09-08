@@ -50,6 +50,7 @@ typedef struct aiocb aiocb_t;
 
 typedef struct{
     aiocb_t cb;
+    int bufsize;
     VALUE io; 
     VALUE rcb;
 } rb_aiocb_t;
@@ -60,7 +61,29 @@ static VALUE c_aio_sync, c_aio_queue, c_aio_inprogress, c_aio_alldone;
 static VALUE c_aio_canceled, c_aio_notcanceled, c_aio_wait, c_aio_nowait;
 static VALUE c_aio_nop, c_aio_read, c_aio_write;
 
-static void rb_aio_error( const char * msg ){
+static void
+inspect_aiocb(const char* func,aiocb_t *cb)
+{    
+    printf("\n%s:\naio_fildes = %d\naio_buf = %s (%d)\naio_nbytes = %d\naio_offset = %d\naio_reqprio = %d\naio_lio_opcode = %d\n",
+           func, cb->aio_fildes, cb->aio_buf, sizeof(cb->aio_buf), cb->aio_nbytes, cb->aio_offset, cb->aio_reqprio, cb->aio_lio_opcode);
+}
+
+static void
+setup_aio_buffer(rb_aiocb_t *cbs)
+{
+    if (!cbs->cb.aio_buf){ 
+      cbs->cb.aio_buf = (char *)malloc(cbs->bufsize);
+    }else{ 
+      if (cbs->bufsize != cbs->cb.aio_nbytes){
+        cbs->bufsize = cbs->cb.aio_nbytes + 1;
+        cbs->cb.aio_buf = (char *)realloc(cbs->cb.aio_buf,cbs->bufsize);
+      }
+    }
+}
+
+static void 
+rb_aio_error(const char * msg)
+{
     rb_raise( eAio, msg );
 }
 
@@ -85,8 +108,7 @@ control_block_nbytes_set(VALUE cb, VALUE bytes)
     rb_aiocb_t *cbs = GetCBStruct(cb);
     Check_Type(bytes, T_FIXNUM);
     cbs->cb.aio_nbytes = FIX2INT(bytes);
-    if (cbs->cb.aio_buf != NULL) free((char *)cbs->cb.aio_buf);
-    cbs->cb.aio_buf = malloc(cbs->cb.aio_nbytes + 1);
+    setup_aio_buffer(cbs);
     if (!cbs->cb.aio_buf) rb_aio_error( "not able to allocate a read buffer" );	
     return bytes;
 }
@@ -125,23 +147,24 @@ control_block_open(int argc, VALUE *argv, VALUE cb)
 }
 
 static void
-control_block_reset0(rb_aiocb_t *cb)
+control_block_reset0(rb_aiocb_t *cbs)
 {    
-    bzero(cb, sizeof(rb_aiocb_t));
-    bzero(&cb->cb, sizeof(aiocb_t));
+    bzero((char *)cbs, sizeof(rb_aiocb_t));
+    bzero((char *)&cbs->cb, sizeof(aiocb_t));
     /* cleanup with rb_io_close(cb->io) */
-    cb->io = Qnil;
-    cb->rcb = Qnil;
-    cb->cb.aio_fildes = 0; 
-    cb->cb.aio_buf = NULL; 
-    cb->cb.aio_nbytes = 0;
-    cb->cb.aio_offset = 0;
-    cb->cb.aio_reqprio = 0;
-    cb->cb.aio_lio_opcode = LIO_READ;
+    cbs->io = Qnil;
+    cbs->rcb = Qnil;
+    cbs->bufsize = 1;
+    cbs->cb.aio_fildes = 0; 
+    cbs->cb.aio_buf = NULL; 
+    cbs->cb.aio_nbytes = 0;
+    cbs->cb.aio_offset = 0;
+    cbs->cb.aio_reqprio = 0;
+    cbs->cb.aio_lio_opcode = LIO_READ;
    /* Disable signals for the time being */
-    cb->cb.aio_sigevent.sigev_notify = SIGEV_NONE;
-    cb->cb.aio_sigevent.sigev_signo = 0;
-    cb->cb.aio_sigevent.sigev_value.sival_int = 0;
+    cbs->cb.aio_sigevent.sigev_notify = SIGEV_NONE;
+    cbs->cb.aio_sigevent.sigev_signo = 0;
+    cbs->cb.aio_sigevent.sigev_value.sival_int = 0;
 }
 
 static VALUE
@@ -157,9 +180,9 @@ static VALUE
 control_block_alloc(VALUE klass)
 {
     VALUE obj;
-    rb_aiocb_t *cb;
-    obj = Data_Make_Struct(klass, rb_aiocb_t, mark_control_block, free_control_block, cb);
-    control_block_reset0(cb);	
+    rb_aiocb_t *cbs;
+    obj = Data_Make_Struct(klass, rb_aiocb_t, mark_control_block, free_control_block, cbs);
+    control_block_reset0(cbs);
     return obj;
 }
 
@@ -187,13 +210,13 @@ control_block_path(VALUE cb)
 #else	
     OpenFile *fptr;
 #endif
-    if NIL_P(cbs->io) return rb_str_new2("");
+    if NIL_P(cbs->io) return rb_tainted_str_new2("");
     GetOpenFile(cbs->io, fptr);
     rb_io_check_readable(fptr);
 #ifdef RUBY19
     return rb_file_s_expand_path( 1, &fptr->pathv );
 #else
-    VALUE path = rb_str_new2(fptr->path);
+    VALUE path = rb_tainted_str_new2(fptr->path);
     return rb_file_s_expand_path( 1, &path );
 #endif
 }
@@ -234,7 +257,7 @@ static VALUE
 control_block_buf_get(VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
-    return cbs->cb.aio_buf == NULL ? rb_str_new2("") : rb_str_new((char *)cbs->cb.aio_buf, cbs->cb.aio_nbytes);
+    return cbs->cb.aio_buf == NULL ? rb_tainted_str_new2("") : rb_tainted_str_new((char *)cbs->cb.aio_buf, cbs->cb.aio_nbytes);
 }
 
 static VALUE
@@ -242,12 +265,9 @@ control_block_buf_set(VALUE cb, VALUE buf)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
     Check_Type(buf, T_STRING);
-    if (cbs->cb.aio_buf != NULL){ 
-      free((char *)cbs->cb.aio_buf);
-      cbs->cb.aio_buf = NULL;
-    }
-    cbs->cb.aio_buf = RSTRING_PTR(buf);
     cbs->cb.aio_nbytes = RSTRING_LEN(buf);
+    setup_aio_buffer(cbs);
+    cbs->cb.aio_buf = RSTRING_PTR(buf);
     return buf;
 }
 
@@ -415,15 +435,14 @@ rb_aio_write( aiocb_t *cb )
 static VALUE 
 rb_aio_read( aiocb_t *cb )
 {
-    int ret;
-    
+    int ret;    
     TRAP_BEG;
     ret = aio_read( cb );
     TRAP_END;
     if (ret != 0) rb_aio_read_error();
     while ( aio_error( cb ) == EINPROGRESS );
     if ((ret = aio_return( cb )) > 0) {
-      return rb_str_new( (char *)cb->aio_buf, cb->aio_nbytes );
+      return rb_tainted_str_new( (char *)cb->aio_buf, cb->aio_nbytes );
     }else{
       return INT2NUM(errno);
     }
@@ -453,12 +472,13 @@ static void
 rb_aio_lio_listio0( int mode, VALUE *cbs, aiocb_t **list, int ops )
 {
     int op;
-    bzero( (char *)list, sizeof(list) );	
-    for (op=0; op < ops; op++) {		
+    bzero((char *)list, sizeof(list));
+    for (op=0; op < ops; op++) {
         rb_aiocb_t *cb = GetCBStruct(RARRAY_PTR(cbs)[op]);
+        setup_aio_buffer(cb);
         if (rb_block_given_p()){
           cb->rcb = rb_block_proc();
-        }
+        } 
       list[op] = &cb->cb;
     }
 }
@@ -469,13 +489,14 @@ rb_aio_lio_listio0( int mode, VALUE *cbs, aiocb_t **list, int ops )
 static int 
 rb_aio_lio_listio( int mode, VALUE *cbs, aiocb_t **list )
 {
-    int ret;
-    int ops = RARRAY_LEN(cbs);	
+    int ret, op;
+    int ops = RARRAY_LEN(cbs);
     rb_aio_lio_listio0(mode, cbs, list, ops);
     TRAP_BEG;
     ret = lio_listio( mode, list, ops, NULL );
     TRAP_END;
-    if (ret != 0) rb_aio_listio_error();
+    /* Darwin triggers an error to clean it's work q */
+    if (ret != 0 && mode != LIO_NOP) rb_aio_listio_error();
     return ops; 
 }
 
@@ -491,13 +512,13 @@ rb_aio_lio_listio_blocking( VALUE *cbs )
     VALUE results = rb_ary_new2( ops );
     for (op=0; op < ops; op++) {
       if (list[op]->aio_lio_opcode == LIO_READ){ 
-         rb_ary_push( results, rb_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
+         rb_ary_push( results, rb_tainted_str_new( (char *)list[op]->aio_buf, list[op]->aio_nbytes ) );
       }else{
          rb_ary_push( results, INT2FIX(list[op]->aio_nbytes) );
       }
     } 
     return results;
-}	
+}
 
 /*
  *  No-op lio_listio
