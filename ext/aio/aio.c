@@ -655,7 +655,7 @@ rb_aio_s_lio_listio(VALUE aio, VALUE cbs)
         case LIO_WAIT:
              return rb_ensure(rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs);   
         case LIO_NOWAIT:
-             return rb_ensure(rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs);
+             return rb_aio_lio_listio_non_blocking((VALUE)cbs);
         case LIO_NOP:
              return rb_ensure(rb_aio_lio_listio_noop, (VALUE)cbs, rb_io_closes, (VALUE)cbs);
     }

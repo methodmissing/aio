@@ -25,6 +25,7 @@ class TestAio < Test::Unit::TestCase
     assert_equal nil, AIO.lio_listio( *([AIO::NOWAIT].concat(cbs)) )     
     sleep(1)
     assert_equal %w(one two three four), cbs.map{|cb| cb.buf }   
+    cbs.each{|cb| cb.close }
     cbs.each{|cb| assert cb.closed? }
   end
 =begin
