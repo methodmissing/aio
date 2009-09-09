@@ -56,16 +56,6 @@ typedef struct{
     VALUE rcb;
 } rb_aiocb_t;
 
-typedef struct{
-    int suspended;
-    int cancelled;
-    int completed;
-    int in_progress;
-    aiocb_t ** requests[AIO_MAX_LIST];
-} rb_aiocbq_t;
-
-static rb_aiocbq_t aio_queue; 
-
 static struct sigevent rb_aio_sig_event;
 
 static ID s_to_str, s_to_s, s_buf;
