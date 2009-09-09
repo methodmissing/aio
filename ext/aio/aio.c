@@ -51,9 +51,22 @@ typedef struct aiocb aiocb_t;
 typedef struct{
     aiocb_t cb;
     int bufsize;
+    int err;
     VALUE io; 
     VALUE rcb;
 } rb_aiocb_t;
+
+typedef struct{
+    int suspended;
+    int cancelled;
+    int completed;
+    int in_progress;
+    aiocb_t ** requests[AIO_MAX_LIST];
+} rb_aiocbq_t;
+
+static rb_aiocbq_t aio_queue; 
+
+static struct sigevent rb_aio_sig_event;
 
 static ID s_to_str, s_to_s, s_buf;
 
@@ -68,23 +81,42 @@ inspect_aiocb(const char* func,aiocb_t *cb)
            func, cb->aio_fildes, cb->aio_buf, sizeof(cb->aio_buf), cb->aio_nbytes, cb->aio_offset, cb->aio_reqprio, cb->aio_lio_opcode);
 }
 
-static void
-setup_aio_buffer(rb_aiocb_t *cbs)
+void 
+rb_aio_completion_handler(int signo, siginfo_t *info, void *context) 
 {
-    if (!cbs->cb.aio_buf){ 
-      cbs->cb.aio_buf = (char *)malloc(cbs->bufsize);
-    }else{ 
-      if (cbs->bufsize != cbs->cb.aio_nbytes){
-        cbs->bufsize = cbs->cb.aio_nbytes + 1;
-        cbs->cb.aio_buf = (char *)realloc(cbs->cb.aio_buf,cbs->bufsize);
-      }
-    }
+}
+
+void
+setup_rb_aio_signals() {
+    struct sigaction sig_act;
+    memset(&sig_act, 0, sizeof(sig_act));
+    sigemptyset(&sig_act.sa_mask);
+    sig_act.sa_sigaction = rb_aio_completion_handler;
+    sig_act.sa_flags = SA_SIGINFO;
+    sigaction(SIGIO, &sig_act, NULL);
+
+    rb_aio_sig_event.sigev_notify = SIGEV_SIGNAL;
+    rb_aio_sig_event.sigev_signo = SIGIO;
 }
 
 static void 
 rb_aio_error(const char * msg)
 {
     rb_raise( eAio, msg );
+}
+
+static void
+setup_aio_buffer(rb_aiocb_t *cbs)
+{
+    if (!cbs->cb.aio_buf){ 
+      cbs->cb.aio_buf = malloc(cbs->bufsize);
+    }else{ 
+      if (cbs->bufsize != cbs->cb.aio_nbytes){
+        cbs->bufsize = cbs->cb.aio_nbytes + 1;
+        cbs->cb.aio_buf = realloc((void*)cbs->cb.aio_buf,cbs->bufsize);
+      }
+    }
+    if (!cbs->cb.aio_buf) rb_aio_error("Not able to allocate / resize the AIO buffer");
 }
 
 #define GetCBStruct(obj)	(Check_Type(obj, T_DATA), (rb_aiocb_t*)DATA_PTR(obj))
@@ -109,14 +141,13 @@ control_block_nbytes_set(VALUE cb, VALUE bytes)
     Check_Type(bytes, T_FIXNUM);
     cbs->cb.aio_nbytes = FIX2INT(bytes);
     setup_aio_buffer(cbs);
-    if (!cbs->cb.aio_buf) rb_aio_error( "not able to allocate a read buffer" );	
     return bytes;
 }
 
 static VALUE
 control_block_open(int argc, VALUE *argv, VALUE cb)
 {
-   const char *fmode;
+    const char *fmode;
 #ifdef RUBY19
     rb_io_t *fptr;
 #else	
@@ -128,11 +159,11 @@ control_block_open(int argc, VALUE *argv, VALUE cb)
     fmode = NIL_P(mode) ? "r" : RSTRING_PTR(mode);
     struct stat stats;
    
-    Check_Type(file, T_STRING);	
+    Check_Type(file, T_STRING);
 
     cbs->io = rb_file_open(RSTRING_PTR(file), fmode);
     GetOpenFile(cbs->io, fptr);
-    rb_io_check_readable(fptr); 	
+    rb_io_check_readable(fptr);
 
     if ( cbs->cb.aio_fildes == 0 && cbs->cb.aio_nbytes == 0){
 #ifdef RUBY19
@@ -155,16 +186,17 @@ control_block_reset0(rb_aiocb_t *cbs)
     cbs->io = Qnil;
     cbs->rcb = Qnil;
     cbs->bufsize = 1;
+    cbs->err = 0;
     cbs->cb.aio_fildes = 0; 
     cbs->cb.aio_buf = NULL; 
     cbs->cb.aio_nbytes = 0;
     cbs->cb.aio_offset = 0;
     cbs->cb.aio_reqprio = 0;
     cbs->cb.aio_lio_opcode = LIO_READ;
-   /* Disable signals for the time being */
-    cbs->cb.aio_sigevent.sigev_notify = SIGEV_NONE;
-    cbs->cb.aio_sigevent.sigev_signo = 0;
-    cbs->cb.aio_sigevent.sigev_value.sival_int = 0;
+    cbs->cb.aio_sigevent.sigev_notify = SIGEV_SIGNAL;
+    cbs->cb.aio_sigevent.sigev_signo = SIGIO;
+    cbs->cb.aio_sigevent.sigev_value.sival_int = 12;
+    setup_aio_buffer(cbs);
 }
 
 static VALUE
@@ -322,7 +354,7 @@ control_block_lio_opcode_set(VALUE cb, VALUE opcode)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
     Check_Type(opcode, T_FIXNUM);
-    if (opcode != c_aio_read && opcode != c_aio_write) rb_aio_error( "Only AIO::READ and AIO::WRITE modes supported" );
+    if (opcode != c_aio_read && opcode != c_aio_write) rb_aio_error("Only AIO::READ and AIO::WRITE modes supported");
     cbs->cb.aio_lio_opcode = NUM2INT(opcode);
     return opcode;
 }
@@ -331,12 +363,12 @@ static VALUE
 control_block_validate(VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
-    if (cbs->cb.aio_fildes <= 0) rb_aio_error( "Invalid file descriptor" );    
-    if (cbs->cb.aio_nbytes <= 0) rb_aio_error( "Invalid buffer length" );    
-    if (cbs->cb.aio_offset < 0) rb_aio_error( "Invalid file offset" );    
-    if (cbs->cb.aio_reqprio < 0) rb_aio_error( "Invalid request priority" );
-    if (cbs->cb.aio_lio_opcode != LIO_READ && cbs->cb.aio_lio_opcode != LIO_WRITE) rb_aio_error( "Only AIO::READ and AIO::WRITE modes supported" );
-    if (!cbs->cb.aio_buf) rb_aio_error( "No buffer allocated" );	
+    if (cbs->cb.aio_fildes <= 0) rb_aio_error("Invalid file descriptor");    
+    if (cbs->cb.aio_nbytes <= 0) rb_aio_error("Invalid buffer length");    
+    if (cbs->cb.aio_offset < 0) rb_aio_error("Invalid file offset");    
+    if (cbs->cb.aio_reqprio < 0) rb_aio_error("Invalid request priority");
+    if (cbs->cb.aio_lio_opcode != LIO_READ && cbs->cb.aio_lio_opcode != LIO_WRITE) rb_aio_error("Only AIO::READ and AIO::WRITE modes supported");
+    if (!cbs->cb.aio_buf) rb_aio_error("No AIO buffer allocated");	
     return cb;    
 }
 
@@ -359,6 +391,7 @@ control_block_close(VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
     if NIL_P(cbs->io) return Qfalse;
+    aio_return(&cbs->cb);
     rb_io_close(cbs->io);
     cbs->io = Qnil; 
     cbs->rcb = Qnil;
@@ -373,19 +406,19 @@ rb_aio_write_error()
 {
     switch(errno){
        case EAGAIN: 
-            rb_aio_error( "[EAGAIN] The request cannot be queued due to exceeding resource (queue) limitations." );
+            rb_aio_error("[EAGAIN] The request cannot be queued due to exceeding resource (queue) limitations.");
        case EBADF: 
-            rb_aio_error( "[EBADF] File descriptor is not valid for writing." );
+            rb_aio_error("[EBADF] File descriptor is not valid for writing.");
        case ENOSYS: 
-            rb_aio_error( "[ENOSYS] aio_read not supported by this implementation." );
+            rb_aio_error("[ENOSYS] aio_read not supported by this implementation.");
        case EINVAL: 
-            rb_aio_error( "[EINVAL] Read offset is invalid" );
+            rb_aio_error("[EINVAL] Read offset is invalid");
        case EOVERFLOW: 
-            rb_aio_error( "[EOVERFLOW] Control block offset exceeded." );
+            rb_aio_error("[EOVERFLOW] Control block offset exceeded.");
        case ECANCELED:
-            rb_aio_error( "[ECANCELED] The requested I/O was canceled by an explicit aio_cancel() request." );
+            rb_aio_error("[ECANCELED] The requested I/O was canceled by an explicit aio_cancel() request.");
        case EFBIG:
-            rb_aio_error( "[EFBIG] Wrong offset." );
+            rb_aio_error("[EFBIG] Wrong offset.");
     }
 }
 
@@ -397,15 +430,15 @@ rb_aio_read_error()
 {
     switch(errno){
        case EAGAIN: 
-            rb_aio_error( "[EAGAIN] The request cannot be queued due to exceeding resource (queue) limitations." );
+            rb_aio_error("[EAGAIN] The request cannot be queued due to exceeding resource (queue) limitations.");
        case EBADF: 
-            rb_aio_error( "[EBADF] File descriptor is not valid for reading." );
+            rb_aio_error("[EBADF] File descriptor is not valid for reading.");
        case ENOSYS: 
-            rb_aio_error( "[ENOSYS] aio_read not supported by this implementation." );
+            rb_aio_error("[ENOSYS] aio_read not supported by this implementation.");
        case EINVAL: 
-            rb_aio_error( "[EINVAL] Read offset is invalid" );
+            rb_aio_error("[EINVAL] Read offset is invalid");
        case EOVERFLOW: 
-            rb_aio_error( "[EOVERFLOW] Control block offset exceeded." );
+            rb_aio_error("[EOVERFLOW] Control block offset exceeded.");
     }
 }
 
@@ -413,16 +446,16 @@ rb_aio_read_error()
  *  Initiates a *blocking* write
  */
 static VALUE 
-rb_aio_write( aiocb_t *cb )
+rb_aio_write(aiocb_t *cb)
 {
     int ret;
     
     TRAP_BEG;
-    ret = aio_write( cb );
+    ret = aio_write(cb);
     TRAP_END;
     if (ret != 0) rb_aio_write_error();
-    while ( aio_error( cb ) == EINPROGRESS );
-    if ((ret = aio_return( cb )) > 0) {
+    while ( aio_error(cb) == EINPROGRESS );
+    if ((ret = aio_return(cb)) > 0) {
      return INT2NUM(cb->aio_nbytes);
     }else{
       return INT2NUM(errno);
@@ -433,15 +466,15 @@ rb_aio_write( aiocb_t *cb )
  *  Initiates a *blocking* read
  */
 static VALUE 
-rb_aio_read( aiocb_t *cb )
+rb_aio_read(aiocb_t *cb)
 {
     int ret;    
     TRAP_BEG;
-    ret = aio_read( cb );
+    ret = aio_read(cb);
     TRAP_END;
     if (ret != 0) rb_aio_read_error();
-    while ( aio_error( cb ) == EINPROGRESS );
-    if ((ret = aio_return( cb )) > 0) {
+    while ( aio_error(cb) == EINPROGRESS );
+    if ((ret = aio_return(cb)) > 0) {
       return rb_tainted_str_new( (char *)cb->aio_buf, cb->aio_nbytes );
     }else{
       return INT2NUM(errno);
@@ -456,20 +489,20 @@ rb_aio_listio_error()
 {
     switch(errno){
        case EAGAIN: 
-            rb_aio_error( "[EAGAIN] Resources necessary to queue all the requests are not available at the moment." );
+            rb_aio_error("[EAGAIN] Resources necessary to queue all the requests are not available at the moment.");
        case EIO: 
-            rb_aio_error( "[EIO] One or more requests failed" );
+            rb_aio_error("[EIO] One or more requests failed");
        case ENOSYS: 
-            rb_aio_error( "[ENOSYS] lio_listio not supported by this implementation." );
+            rb_aio_error("[ENOSYS] lio_listio not supported by this implementation.");
        case EINVAL: 
-            rb_aio_error( "[EINVAL] Maximum number of allowed simultaneous requests exceeded." );
+            rb_aio_error("[EINVAL] Maximum number of allowed simultaneous requests exceeded.");
        case EINTR: 
-            rb_aio_error( "[EINTR] A signal was delivered while waiting for all I/O requests to complete during a LIO_WAIT operation." );
+            rb_aio_error("[EINTR] A signal was delivered while waiting for all I/O requests to complete during a LIO_WAIT operation.");
     }
 }
 
 static void
-rb_aio_lio_listio0( int mode, VALUE *cbs, aiocb_t **list, int ops )
+rb_aio_lio_listio0(int mode, VALUE *cbs, aiocb_t **list, int ops)
 {
     int op;
     bzero((char *)list, sizeof(list));
@@ -487,13 +520,15 @@ rb_aio_lio_listio0( int mode, VALUE *cbs, aiocb_t **list, int ops )
  *  Initiates lio_listio
  */
 static int 
-rb_aio_lio_listio( int mode, VALUE *cbs, aiocb_t **list )
+rb_aio_lio_listio(int mode, VALUE *cbs, aiocb_t **list)
 {
-    int ret, op;
+    int ret;
     int ops = RARRAY_LEN(cbs);
     rb_aio_lio_listio0(mode, cbs, list, ops);
+
     TRAP_BEG;
-    ret = lio_listio( mode, list, ops, NULL );
+    /* &rb_aio_sig_event */
+    ret = lio_listio(mode, list, ops, NULL);
     TRAP_END;
     /* Darwin triggers an error to clean it's work q */
     if (ret != 0 && mode != LIO_NOP) rb_aio_listio_error();
@@ -504,7 +539,7 @@ rb_aio_lio_listio( int mode, VALUE *cbs, aiocb_t **list )
  *  Blocking lio_listio
  */
 static VALUE
-rb_aio_lio_listio_blocking( VALUE *cbs )
+rb_aio_lio_listio_blocking(VALUE *cbs)
 {
     aiocb_t *list[AIO_MAX_LIST];
     int op;
@@ -524,10 +559,10 @@ rb_aio_lio_listio_blocking( VALUE *cbs )
  *  No-op lio_listio
  */
 static VALUE
-rb_aio_lio_listio_noop( VALUE *cbs )
+rb_aio_lio_listio_noop(VALUE *cbs)
 {
     aiocb_t *list[AIO_MAX_LIST];
-    rb_aio_lio_listio( LIO_NOP, cbs, list );
+    rb_aio_lio_listio(LIO_NOP, cbs, list);
     return Qnil;
 }
 
@@ -535,10 +570,10 @@ rb_aio_lio_listio_noop( VALUE *cbs )
  *  Non-blocking lio_listio
  */
 static VALUE
-rb_aio_lio_listio_non_blocking( VALUE *cbs )
+rb_aio_lio_listio_non_blocking(VALUE *cbs)
 {
     aiocb_t *list[AIO_MAX_LIST];
-    rb_aio_lio_listio( LIO_NOWAIT, cbs, list );
+    rb_aio_lio_listio(LIO_NOWAIT, cbs, list);
     return Qnil;
 }
 
@@ -546,10 +581,10 @@ rb_aio_lio_listio_non_blocking( VALUE *cbs )
  *  Helper to ensure files opened via AIO.lio_listio is closed.
  */
 static void 
-rb_io_closes( VALUE cbs ){
+rb_io_closes(VALUE cbs){
     int io;
     for (io=0; io < RARRAY_LEN(cbs); io++) {
-      control_block_close( RARRAY_PTR(cbs)[io] );
+      control_block_close(RARRAY_PTR(cbs)[io]);
     }  
 }
 
@@ -561,7 +596,7 @@ rb_io_closes( VALUE cbs ){
  *  cross platform notification is supported.
  */
 static VALUE 
-rb_aio_s_write( VALUE aio, VALUE cb )
+rb_aio_s_write(VALUE aio, VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
 #ifdef RUBY19
@@ -575,7 +610,7 @@ rb_aio_s_write( VALUE aio, VALUE cb )
       cbs->rcb = rb_block_proc();
     }
     
-    return rb_ensure( rb_aio_write, (VALUE)&cbs->cb, control_block_close, cb );
+    return rb_ensure(rb_aio_write, (VALUE)&cbs->cb, control_block_close, cb);
 }
 
 /*
@@ -586,13 +621,13 @@ rb_aio_s_write( VALUE aio, VALUE cb )
  *  cross platform notification is supported.
  */
 static VALUE 
-rb_aio_s_read( VALUE aio, VALUE cb )
+rb_aio_s_read(VALUE aio, VALUE cb)
 {
     rb_aiocb_t *cbs = GetCBStruct(cb);
     if (rb_block_given_p()){
       cbs->rcb = rb_block_proc();
     }
-    return rb_ensure( rb_aio_read, (VALUE)&cbs->cb, control_block_close, cb );
+    return rb_ensure(rb_aio_read, (VALUE)&cbs->cb, control_block_close, cb);
 }
 
 /*
@@ -618,20 +653,21 @@ rb_aio_s_read( VALUE aio, VALUE cb )
  *  close_nocancel(0x3)	 = 0 0
  */
 static VALUE 
-rb_aio_s_lio_listio( VALUE aio, VALUE cbs )
+rb_aio_s_lio_listio(VALUE aio, VALUE cbs)
 {
     VALUE mode_arg, mode;
+    int ops;
+    ops = RARRAY_LEN(cbs);
     mode_arg = RARRAY_PTR(cbs)[0];
     mode = (mode_arg == c_aio_wait || mode_arg == c_aio_nowait || mode_arg == c_aio_nop) ? rb_ary_shift(cbs) : c_aio_wait;
-    int ops = RARRAY_LEN(cbs);
     if (ops > AIO_MAX_LIST) return c_aio_queue;
     switch(NUM2INT(mode)){
         case LIO_WAIT:
-             return rb_ensure( rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );   
+             return rb_ensure(rb_aio_lio_listio_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs);   
         case LIO_NOWAIT:
-             return rb_ensure( rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
+             return rb_ensure(rb_aio_lio_listio_non_blocking, (VALUE)cbs, rb_io_closes, (VALUE)cbs);
         case LIO_NOP:
-             return rb_ensure( rb_aio_lio_listio_noop, (VALUE)cbs, rb_io_closes, (VALUE)cbs );
+             return rb_ensure(rb_aio_lio_listio_noop, (VALUE)cbs, rb_io_closes, (VALUE)cbs);
     }
     rb_aio_error("Only modes AIO::WAIT, AIO::NOWAIT and AIO::NOP supported");
 }
@@ -644,14 +680,14 @@ rb_aio_cancel_error()
 {
     switch(errno){
        case EBADF: 
-            rb_aio_error( "[EBADF] Invalid file descriptor." );
+            rb_aio_error("[EBADF] Invalid file descriptor.");
        case ENOSYS: 
-            rb_aio_error( "[ENOSYS] aio_cancel is not supported by this implementation." );
+            rb_aio_error("[ENOSYS] aio_cancel is not supported by this implementation.");
     }
 }
 
 static VALUE 
-rb_aio_cancel( int fd, void *cb )
+rb_aio_cancel(int fd, void *cb)
 {   
     int ret;
     TRAP_BEG;
@@ -691,29 +727,29 @@ rb_aio_return_error()
 {
     switch(errno){
        case ENOMEM: 
-            rb_aio_error( "[ENOMEM] There were no Kernel control blocks available to service this request." );
+            rb_aio_error("[ENOMEM] There were no Kernel control blocks available to service this request.");
        case EINVAL: 
-            rb_aio_error( "[EINVAL] The control block does not refer to an asynchronous operation whose return status has not yet been retrieved." );
+            rb_aio_error("[EINVAL] The control block does not refer to an asynchronous operation whose return status has not yet been retrieved.");
        case ENOSYS: 
-            rb_aio_error( "[ENOSYS] aio_return not supported by this implementation." );
+            rb_aio_error("[ENOSYS] aio_return not supported by this implementation.");
     }
 }
 
 static VALUE 
-rb_aio_return( aiocb_t *cb )
+rb_aio_return(aiocb_t *cb)
 { 
     int ret;
     TRAP_BEG;
     ret = aio_return( cb );
-    TRAP_END;			
+    TRAP_END;
     if (ret != 0) rb_aio_return_error();
     return INT2FIX(ret);
 }
 
 static VALUE 
-rb_aio_s_return( VALUE aio, VALUE cb )
+rb_aio_s_return(VALUE aio, VALUE cb)
 {
-    rb_aiocb_t *cbs = GetCBStruct(cb);	
+    rb_aiocb_t *cbs = GetCBStruct(cb);
     if (rb_block_given_p()){
       cbs->rcb = rb_block_proc();
     }
@@ -728,31 +764,31 @@ rb_aio_err_error()
 {
     switch(errno){
        case EINVAL: 
-            rb_aio_error( "[EINVAL] The control block does not refer to an asynchronous operation whose return status has not yet been retrieved." );
+            rb_aio_error("[EINVAL] The control block does not refer to an asynchronous operation whose return status has not yet been retrieved.");
        case ENOSYS: 
-            rb_aio_error( "[ENOSYS] aio_error not supported by this implementation." );
+            rb_aio_error("[ENOSYS] aio_error not supported by this implementation.");
     }
 }
 
 static VALUE 
-rb_aio_err( aiocb_t *cb )
+rb_aio_err(aiocb_t *cb)
 { 
     int ret;
     TRAP_BEG;
-    ret = aio_error( cb );
+    ret = aio_error(cb);
     TRAP_END;
     if (ret != 0) rb_aio_err_error();
     return INT2FIX(ret);
 }
 
 static VALUE 
-rb_aio_s_error( VALUE aio, VALUE cb )
+rb_aio_s_error(VALUE aio, VALUE cb)
 {
-    rb_aiocb_t *cbs = GetCBStruct(cb);	
+    rb_aiocb_t *cbs = GetCBStruct(cb);
     if (rb_block_given_p()){
       cbs->rcb = rb_block_proc();
     }
-    return rb_aio_err( &cbs->cb );	
+    return rb_aio_err( &cbs->cb );
 }
 
 /*
@@ -763,31 +799,31 @@ rb_aio_sync_error()
 {
     switch(errno){
        case EINVAL: 
-            rb_aio_error( "[EINVAL] A value of op other than AIO::DSYNC or AIO::SYNC was specified." );
+            rb_aio_error("[EINVAL] A value of op other than AIO::DSYNC or AIO::SYNC was specified.");
        case EAGAIN: 
-            rb_aio_error( "[EAGAIN] The requested asynchronous operation was not queued due to temporary resource limitations." );
+            rb_aio_error("[EAGAIN] The requested asynchronous operation was not queued due to temporary resource limitations.");
        case ENOSYS: 
-            rb_aio_error( "[ENOSYS] aio_error not supported by this implementation." );
+            rb_aio_error("[ENOSYS] aio_error not supported by this implementation.");
        case EBADF: 
-            rb_aio_error( "[EBADF] Invalid file descriptor." );
+            rb_aio_error("[EBADF] Invalid file descriptor.");
     }
 }
 
 static VALUE 
-rb_aio_sync( int op, aiocb_t *cb )
+rb_aio_sync(int op, aiocb_t *cb)
 { 
     int ret;
     TRAP_BEG;
     ret = aio_fsync( op, cb );
-    TRAP_END;			
+    TRAP_END;
     if (ret != 0) rb_aio_sync_error();
     return INT2FIX(ret);
 }
 
 static VALUE 
-rb_aio_s_sync( VALUE aio, VALUE op, VALUE cb )
+rb_aio_s_sync(VALUE aio, VALUE op, VALUE cb)
 {
-    rb_aiocb_t *cbs = GetCBStruct(cb);	
+    rb_aiocb_t *cbs = GetCBStruct(cb);
     if (rb_block_given_p()){
       cbs->rcb = rb_block_proc();
     }
@@ -869,4 +905,6 @@ void Init_aio()
     rb_define_module_function( mAio, "return", rb_aio_s_return, 1 );
     rb_define_module_function( mAio, "error", rb_aio_s_error, 1 );
     rb_define_module_function( mAio, "sync", rb_aio_s_sync, 2 );
+
+    setup_rb_aio_signals();
 }
